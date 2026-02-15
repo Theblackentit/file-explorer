@@ -4,13 +4,17 @@ A modern desktop launcher + file explorer app built with Python/Tkinter.
 
 ## What's improved
 
-- Modernized launcher-style UI with cleaner cards and better spacing.
-- Add/Edit sections using file/folder picker dialogs (no manual path typing needed).
-- Right-click section menu for quick Edit / Change Image / Delete.
+- Crunchyroll / ZZZ-inspired dark neon style with cleaner cards and stronger accents.
+- Add/Edit sections using file/folder pickers (no manual path typing required).
+- Right-click card menu for quick Edit / Change Image / Delete.
 - Theme Studio with:
-  - color pickers + color wheel (`🎨`) for all theme colors,
+  - color wheel pickers (`🎨`) + hex,
   - custom background image,
   - stickers and small GIF support.
+- Section image controls in Edit mode:
+  - **Image mode**: `contain`, `cover`, `original`, `stretch`
+  - **Scale X / Scale Y** sliders to stretch or shrink manually
+  - Live preview before saving
 - Full filesystem tree browser with double-click open.
 
 ## Run locally
