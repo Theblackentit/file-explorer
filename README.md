@@ -9,6 +9,7 @@ A modern desktop launcher + file explorer app built with Python/Tkinter.
 - Full in-app file explorer behavior on the **left side**:
   - Layout toggle: `Tree + Files`, `Tree Only`, `Files Only`
   - View toggle: `Details`, `List`, `Icons`
+  - Icons mode now uses a true grid (rows and columns) instead of a single vertical list
   - Size slider to scale rows/icons similar to File Explorer icon-size changes
   - In-app folder navigation and file preview (without forcing OS File Explorer)
 - File previews:

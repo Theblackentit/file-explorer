@@ -279,6 +279,18 @@ class LauncherExplorerApp:
         self.file_view.bind("<<TreeviewSelect>>", self.on_file_view_select)
         self.file_view.bind("<Button-3>", self.on_file_view_right_click)
 
+        self.icon_grid_outer = tk.Frame(self.files_frame)
+        self.icon_grid_canvas = tk.Canvas(self.icon_grid_outer, highlightthickness=0)
+        self.icon_grid_scroll = ttk.Scrollbar(self.icon_grid_outer, orient="vertical", command=self.icon_grid_canvas.yview)
+        self.icon_grid_inner = tk.Frame(self.icon_grid_canvas)
+        self.icon_grid_canvas.configure(yscrollcommand=self.icon_grid_scroll.set)
+        self.icon_grid_canvas.create_window((0, 0), window=self.icon_grid_inner, anchor="nw")
+        self.icon_grid_inner.bind("<Configure>", lambda _e: self.icon_grid_canvas.configure(scrollregion=self.icon_grid_canvas.bbox("all")))
+        self.icon_grid_canvas.pack(side="left", fill="both", expand=True)
+        self.icon_grid_scroll.pack(side="right", fill="y")
+
+        self.selected_icon_path = None
+
         preview = tk.LabelFrame(self.files_frame, text="In-app preview")
         preview.pack(fill="x", padx=4, pady=(0, 4))
         self.preview_title = tk.Label(preview, text="Select a file/folder", anchor="w")
@@ -585,6 +597,9 @@ class LauncherExplorerApp:
         return tk_img
 
     def populate_file_view(self):
+        for child in self.icon_grid_inner.winfo_children():
+            child.destroy()
+
         for row in self.file_view.get_children():
             self.file_view.delete(row)
 
@@ -593,6 +608,16 @@ class LauncherExplorerApp:
             return
 
         mode = self.left_view_var.get()
+        if mode == "Icons":
+            self.file_view.pack_forget()
+            for w in self.files_frame.winfo_children():
+                # keep path row and preview frame in place
+                pass
+            self.icon_grid_outer.pack(side="left", fill="both", expand=True, padx=(4, 0), pady=(0, 4))
+        else:
+            self.icon_grid_outer.pack_forget()
+            self.file_view.pack(side="left", fill="both", expand=True, padx=(4, 0), pady=(0, 4))
+
         if mode == "Details":
             self.file_view.configure(show="tree headings")
             self.file_view.column("#0", width=250)
@@ -627,7 +652,61 @@ class LauncherExplorerApp:
             text = name if mode != "Icons" else f"   {name}"
             self.file_view.insert("", "end", text=text, image=icon, values=(size, typ, modified, full))
 
+        if mode == "Icons":
+            self.populate_icon_grid(names, current)
+
         self.write_explorer_settings()
+
+    def populate_icon_grid(self, names, current):
+        cell_w = 170
+        cell_h = 128
+        width = max(1, self.icon_grid_canvas.winfo_width())
+        cols = max(1, width // cell_w)
+
+        for i, name in enumerate(names):
+            full = os.path.join(current, name)
+            icon = self.icon_for_path(full)
+            row = i // cols
+            col = i % cols
+
+            card = tk.Frame(self.icon_grid_inner, width=cell_w - 12, height=cell_h - 8, bd=1, relief="flat")
+            card.grid(row=row, column=col, padx=6, pady=6, sticky="n")
+            card.grid_propagate(False)
+
+            icon_lbl = tk.Label(card, image=icon)
+            icon_lbl.image = icon
+            icon_lbl.pack(pady=(10, 4))
+
+            title = tk.Label(card, text=name, wraplength=cell_w - 24, justify="center")
+            title.pack(fill="x", padx=8)
+
+            self._paint_icon_card(card, selected=(full == self.selected_icon_path))
+
+            for widget in (card, icon_lbl, title):
+                widget.bind("<Button-1>", lambda _e, p=full: self.select_icon_item(p))
+                widget.bind("<Double-1>", lambda _e, p=full: self.open_icon_item(p))
+                widget.bind("<Button-3>", lambda e, p=full: self.show_file_context_menu(e, p))
+
+    def _paint_icon_card(self, card, selected=False):
+        t = self.theme
+        bg = t["accent"] if selected else t["card"]
+        fg = "#0b0d13" if selected else t["text"]
+        card.configure(bg=bg, highlightthickness=1, highlightbackground=t["secondary"])
+        for child in card.winfo_children():
+            if isinstance(child, tk.Label):
+                child.configure(bg=bg, fg=fg)
+
+    def select_icon_item(self, path):
+        self.selected_icon_path = path
+        self.preview_file(path)
+        self.populate_file_view()
+
+    def open_icon_item(self, path):
+        self.select_icon_item(path)
+        if os.path.isdir(path):
+            self.set_current_dir(path)
+        else:
+            self.open_external(path)
 
     def on_file_view_select(self, _event):
         sel = self.file_view.selection()
@@ -659,6 +738,9 @@ class LauncherExplorerApp:
         if not path:
             return
 
+        self.show_file_context_menu(event, path)
+
+    def show_file_context_menu(self, event, path):
         menu = tk.Menu(self.root, tearoff=0)
         menu.add_command(label="Open", command=lambda p=path: self.open_external(p) if os.path.isfile(p) else self.set_current_dir(p))
         menu.add_command(label="Preview", command=lambda p=path: self.preview_file(p))
