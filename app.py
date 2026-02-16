@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import mimetypes
+import shutil
 from datetime import datetime
 from pathlib import Path
 import tkinter as tk
@@ -93,6 +94,9 @@ class LauncherExplorerApp:
         self.preview_text_widget_font = ("Segoe UI", 10)
         self.theme_background_src = None
         self.theme_background_tk = None
+        self.header_gradient_tk = None
+        self.left_gradient_tk = None
+        self.right_gradient_tk = None
 
         self.setup_style()
         self.build_ui()
@@ -156,6 +160,9 @@ class LauncherExplorerApp:
         top = tk.Frame(self.root, height=84)
         top.pack(fill="x", padx=12, pady=(10, 6))
 
+        self.header_gradient = tk.Label(top, bd=0, highlightthickness=0)
+        self.header_gradient.place(x=0, y=0, relwidth=1, relheight=1)
+
         tk.Label(top, text=APP_NAME, font=("Segoe UI", 22, "bold")).pack(side="left", padx=(10, 20), pady=(8, 0))
         tk.Label(top, text="Anime launcher vibe • custom themes • rich cards", font=("Segoe UI", 10)).pack(side="left", pady=(12, 0))
 
@@ -182,8 +189,11 @@ class LauncherExplorerApp:
 
         self.build_left_side()
         self.build_right_side()
+        self.root.bind("<Configure>", self.on_window_configure)
 
     def build_left_side(self):
+        self.left_gradient = tk.Label(self.left_shell, bd=0, highlightthickness=0)
+        self.left_gradient.place(x=0, y=0, relwidth=1, relheight=1)
         controls = tk.Frame(self.left_shell)
         controls.pack(fill="x", padx=6, pady=(4, 6))
 
@@ -267,6 +277,7 @@ class LauncherExplorerApp:
         file_scroll.pack(side="right", fill="y", pady=(0, 4))
         self.file_view.bind("<Double-1>", self.on_file_view_double_click)
         self.file_view.bind("<<TreeviewSelect>>", self.on_file_view_select)
+        self.file_view.bind("<Button-3>", self.on_file_view_right_click)
 
         preview = tk.LabelFrame(self.files_frame, text="In-app preview")
         preview.pack(fill="x", padx=4, pady=(0, 4))
@@ -276,6 +287,8 @@ class LauncherExplorerApp:
         self.preview_text.pack(fill="x", padx=6, pady=(0, 6))
 
     def build_right_side(self):
+        self.right_gradient = tk.Label(self.right_shell, bd=0, highlightthickness=0)
+        self.right_gradient.place(x=0, y=0, relwidth=1, relheight=1)
         self.canvas = tk.Canvas(self.right_shell, highlightthickness=0)
         self.rscroll = ttk.Scrollbar(self.right_shell, orient="vertical", command=self.canvas.yview)
         self.canvas.configure(yscrollcommand=self.rscroll.set)
@@ -314,6 +327,62 @@ class LauncherExplorerApp:
         self.cards_container = tk.Frame(self.content)
         self.cards_container.pack(fill="both", expand=True, padx=24, pady=24)
 
+    def on_window_configure(self, _event):
+        self.render_gradients()
+
+    def render_gradients(self):
+        self.header_gradient_tk = self.create_gradient_image(
+            max(300, self.root.winfo_width() - 24),
+            84,
+            self.theme.get("bg", "#0b0d13"),
+            self.theme.get("panel", "#171a24"),
+        )
+        self.header_gradient.configure(image=self.header_gradient_tk)
+
+        self.left_gradient_tk = self.create_gradient_image(
+            max(300, self.left_shell.winfo_width()),
+            max(300, self.left_shell.winfo_height()),
+            self.theme.get("panel", "#171a24"),
+            self.theme.get("bg", "#0b0d13"),
+            vertical=True,
+        )
+        self.left_gradient.configure(image=self.left_gradient_tk)
+        self.left_gradient.lower()
+
+        self.right_gradient_tk = self.create_gradient_image(
+            max(300, self.right_shell.winfo_width()),
+            max(300, self.right_shell.winfo_height()),
+            self.theme.get("panel", "#171a24"),
+            self.theme.get("bg", "#0b0d13"),
+            vertical=True,
+        )
+        self.right_gradient.configure(image=self.right_gradient_tk)
+        self.right_gradient.lower()
+
+    def create_gradient_image(self, width, height, start_hex, end_hex, vertical=False):
+        def hex_to_rgb(h):
+            h = h.lstrip("#")
+            return tuple(int(h[i : i + 2], 16) for i in (0, 2, 4))
+
+        start = hex_to_rgb(start_hex)
+        end = hex_to_rgb(end_hex)
+        img = Image.new("RGB", (width, height), start)
+        draw = ImageDraw.Draw(img)
+
+        steps = height if vertical else width
+        for i in range(max(1, steps)):
+            t = i / max(1, steps - 1)
+            r = int(start[0] * (1 - t) + end[0] * t)
+            g = int(start[1] * (1 - t) + end[1] * t)
+            b = int(start[2] * (1 - t) + end[2] * t)
+            color = (r, g, b)
+            if vertical:
+                draw.line([(0, i), (width, i)], fill=color)
+            else:
+                draw.line([(i, 0), (i, height)], fill=color)
+
+        return ImageTk.PhotoImage(img)
+
 
     def on_left_size_change(self):
         self.left_size_var.set(int(float(self.left_size_var.get())))
@@ -344,6 +413,7 @@ class LauncherExplorerApp:
 
         self._recolor_recursive(self.root, t)
         self._render_background()
+        self.render_gradients()
 
     def _recolor_recursive(self, widget, theme):
         cls = widget.winfo_class()
@@ -579,6 +649,100 @@ class LauncherExplorerApp:
         else:
             self.preview_file(path)
             self.open_external(path)
+
+    def on_file_view_right_click(self, event):
+        item = self.file_view.identify_row(event.y)
+        if not item:
+            return
+        self.file_view.selection_set(item)
+        path = self.file_view.set(item, "fullpath")
+        if not path:
+            return
+
+        menu = tk.Menu(self.root, tearoff=0)
+        menu.add_command(label="Open", command=lambda p=path: self.open_external(p) if os.path.isfile(p) else self.set_current_dir(p))
+        menu.add_command(label="Preview", command=lambda p=path: self.preview_file(p))
+        menu.add_separator()
+        menu.add_command(label="Change Icon Image...", command=lambda p=path: self.change_file_icon_for_path(p))
+        menu.add_command(label="Remove Custom Icon", command=lambda p=path: self.remove_custom_icon_for_path(p))
+        menu.add_separator()
+        menu.add_command(label="Rename", command=lambda p=path: self.rename_path(p))
+        menu.add_command(label="Compress to .zip", command=lambda p=path: self.compress_path(p))
+        menu.add_command(label="Delete", command=lambda p=path: self.delete_path(p))
+        menu.add_separator()
+        menu.add_command(label="Properties", command=lambda p=path: self.show_path_properties(p))
+        menu.tk_popup(event.x_root, event.y_root)
+
+    def change_file_icon_for_path(self, path):
+        image = filedialog.askopenfilename(
+            title="Choose icon image",
+            filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.gif *.bmp")],
+        )
+        if not image:
+            return
+        self.config_data.setdefault("file_images", {})[path] = image
+        self.file_icon_cache.clear()
+        self.save_config()
+        self.populate_file_view()
+
+    def remove_custom_icon_for_path(self, path):
+        if path in self.config_data.get("file_images", {}):
+            del self.config_data["file_images"][path]
+            self.file_icon_cache.clear()
+            self.save_config()
+            self.populate_file_view()
+
+    def rename_path(self, path):
+        new_name = simpledialog.askstring(APP_NAME, "New name:", initialvalue=os.path.basename(path))
+        if not new_name:
+            return
+        new_path = os.path.join(os.path.dirname(path), new_name)
+        try:
+            os.rename(path, new_path)
+            self.file_icon_cache.clear()
+            self.populate_file_view()
+        except Exception as exc:
+            messagebox.showerror(APP_NAME, f"Rename failed:\n{exc}")
+
+    def compress_path(self, path):
+        try:
+            if os.path.isdir(path):
+                base = os.path.join(os.path.dirname(path), os.path.basename(path))
+                archive = shutil.make_archive(base, "zip", root_dir=os.path.dirname(path), base_dir=os.path.basename(path))
+            else:
+                stem = os.path.splitext(path)[0]
+                archive = shutil.make_archive(stem, "zip", root_dir=os.path.dirname(path), base_dir=os.path.basename(path))
+            messagebox.showinfo(APP_NAME, f"Compressed to:\n{archive}")
+            self.populate_file_view()
+        except Exception as exc:
+            messagebox.showerror(APP_NAME, f"Compression failed:\n{exc}")
+
+    def delete_path(self, path):
+        if not messagebox.askyesno(APP_NAME, f"Delete this item?\n{path}"):
+            return
+        try:
+            if os.path.isdir(path):
+                shutil.rmtree(path)
+            else:
+                os.remove(path)
+            self.file_icon_cache.clear()
+            self.populate_file_view()
+        except Exception as exc:
+            messagebox.showerror(APP_NAME, f"Delete failed:\n{exc}")
+
+    def show_path_properties(self, path):
+        try:
+            stat = os.stat(path)
+            kind = "Folder" if os.path.isdir(path) else "File"
+            size = "-" if os.path.isdir(path) else self._format_size(stat.st_size)
+            modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+            created = datetime.fromtimestamp(stat.st_ctime).strftime("%Y-%m-%d %H:%M:%S")
+            messagebox.showinfo(
+                APP_NAME,
+                f"Type: {kind}\nName: {os.path.basename(path)}\nPath: {path}\nSize: {size}\nModified: {modified}\nCreated: {created}",
+            )
+        except Exception as exc:
+            messagebox.showerror(APP_NAME, f"Could not read properties:\n{exc}")
 
     def preview_file(self, path):
         self.preview_title.configure(text=path)

@@ -5,6 +5,7 @@ A modern desktop launcher + file explorer app built with Python/Tkinter.
 ## Highlights
 
 - Modernized dark UI with smoother typography and refined controls (buttons, dropdowns, table headers, sliders).
+- Added subtle gradients across header/panes for a more premium Microsoft/Hoyoverse-style visual finish.
 - Full in-app file explorer behavior on the **left side**:
   - Layout toggle: `Tree + Files`, `Tree Only`, `Files Only`
   - View toggle: `Details`, `List`, `Icons`
@@ -17,8 +18,10 @@ A modern desktop launcher + file explorer app built with Python/Tkinter.
 - Double-click behavior:
   - folders open in-app
   - openable files launch with system default app
+- Right-click context menu for files includes: Open, Preview, Rename, Compress to ZIP, Delete, Properties, and icon customization.
 - Custom file icons/images in explorer view:
   - map by extension (ex: `.exe`) or exact file path
+  - right-click any file to set/remove a custom icon image
 - Right side section cards support 2 types:
   - `shortcut`: launches app/file externally
   - `collection`: opens selected folder inside this app's explorer panel
