@@ -5,6 +5,7 @@ import mimetypes
 from datetime import datetime
 from pathlib import Path
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import colorchooser, filedialog, messagebox, simpledialog, ttk
 
 from PIL import Image, ImageDraw, ImageSequence, ImageTk
@@ -75,7 +76,12 @@ class LauncherExplorerApp:
         self.root.title(APP_NAME)
         self.root.geometry("1520x940")
         self.root.minsize(1250, 760)
-        self.root.option_add("*Font", "Segoe UI 10")
+        default_font = tkfont.nametofont("TkDefaultFont")
+        default_font.configure(family="Segoe UI", size=10)
+        text_font = tkfont.nametofont("TkTextFont")
+        text_font.configure(family="Segoe UI", size=10)
+        heading_font = tkfont.nametofont("TkHeadingFont")
+        heading_font.configure(family="Segoe UI", size=10, weight="bold")
 
         self.config_data = self.load_config()
         self.theme = self.current_theme()
@@ -150,7 +156,7 @@ class LauncherExplorerApp:
         top = tk.Frame(self.root, height=84)
         top.pack(fill="x", padx=12, pady=(10, 6))
 
-        tk.Label(top, text=APP_NAME, font=("Segoe UI Semibold", 22)).pack(side="left", padx=(10, 20), pady=(8, 0))
+        tk.Label(top, text=APP_NAME, font=("Segoe UI", 22, "bold")).pack(side="left", padx=(10, 20), pady=(8, 0))
         tk.Label(top, text="Anime launcher vibe • custom themes • rich cards", font=("Segoe UI", 10)).pack(side="left", pady=(12, 0))
 
         actions = tk.Frame(top)
@@ -287,7 +293,7 @@ class LauncherExplorerApp:
 
         toolbar = tk.Frame(self.content)
         toolbar.pack(fill="x", padx=24, pady=(18, 0))
-        tk.Label(toolbar, text="Sort:", font=("Segoe UI Semibold", 10)).pack(side="left")
+        tk.Label(toolbar, text="Sort:", font=("Segoe UI", 10, "bold")).pack(side="left")
         self.sort_combo = ttk.Combobox(
             toolbar,
             textvariable=self.sort_var,
@@ -298,7 +304,7 @@ class LauncherExplorerApp:
         self.sort_combo.pack(side="left", padx=(8, 16))
         self.sort_combo.bind("<<ComboboxSelected>>", lambda _e: self.render_sections())
 
-        tk.Label(toolbar, text="Zoom:", font=("Segoe UI Semibold", 10)).pack(side="left")
+        tk.Label(toolbar, text="Zoom:", font=("Segoe UI", 10, "bold")).pack(side="left")
         self.zoom_label = tk.Label(toolbar, text=f"{self.zoom_var.get()}%", width=5, anchor="e")
         self.zoom_label.pack(side="right", padx=(6, 0))
         self.zoom_slider = ttk.Scale(toolbar, from_=70, to=170, variable=self.zoom_var, length=180,
@@ -327,13 +333,13 @@ class LauncherExplorerApp:
         self.main.configure(bg=t["bg"])
         self.accent_bar.configure(bg=t["secondary"])
 
-        self.style.configure("TButton", padding=(12, 7), font=("Segoe UI Semibold", 10), foreground=t["text"], borderwidth=0)
+        self.style.configure("TButton", padding=(12, 7), font=("Segoe UI", 10, "bold"), foreground=t["text"], borderwidth=0)
         self.style.map("TButton", background=[("active", t["secondary"]), ("!active", t["card"])], foreground=[("active", "#0b0d13")])
         self.style.configure("TCombobox", fieldbackground=t["card"], background=t["card"], foreground=t["text"], arrowsize=13)
         self.style.configure("TEntry", fieldbackground=t["card"], foreground=t["text"])
         self.style.configure("Treeview", font=("Segoe UI", 10), rowheight=max(24, int(self.left_size_var.get())))
         self.style.configure("Treeview", background=t["panel"], fieldbackground=t["panel"], foreground=t["text"], borderwidth=0)
-        self.style.configure("Treeview.Heading", background=t["card"], foreground=t["text"], font=("Segoe UI Semibold", 10), relief="flat")
+        self.style.configure("Treeview.Heading", background=t["card"], foreground=t["text"], font=("Segoe UI", 10, "bold"), relief="flat")
         self.style.map("Treeview", background=[("selected", t["secondary"])], foreground=[("selected", "#0b0d13")])
 
         self._recolor_recursive(self.root, t)
@@ -998,7 +1004,7 @@ class LauncherExplorerApp:
                 lbl = tk.Label(card, text="No image", font=("Segoe UI", max(9, int(10 * zoom))))
             lbl.pack(pady=(12, 8))
 
-            tk.Label(card, text=section.get("name", "Unnamed"), font=("Segoe UI Semibold", max(10, int(13 * zoom)))).pack()
+            tk.Label(card, text=section.get("name", "Unnamed"), font=("Segoe UI", max(10, int(13 * zoom)), "bold")).pack()
             tk.Label(card, text=f"[{section.get('type', 'shortcut')}]", font=("Segoe UI", 9)).pack()
             tk.Label(card, text=section.get("path", ""), font=("Segoe UI", max(8, int(8 * zoom))), wraplength=img_w).pack(pady=(2, 8))
 
