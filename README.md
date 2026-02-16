@@ -4,22 +4,25 @@ A modern desktop launcher + file explorer app built with Python/Tkinter.
 
 ## Highlights
 
-- Crunchyroll / ZZZ-inspired dark neon style.
+- Modernized dark UI with smoother typography and refined controls (buttons, dropdowns, table headers, sliders).
 - Full in-app file explorer behavior on the **left side**:
   - Layout toggle: `Tree + Files`, `Tree Only`, `Files Only`
   - View toggle: `Details`, `List`, `Icons`
   - Size slider to scale rows/icons similar to File Explorer icon-size changes
-  - In-app folder navigation and file preview (image/text/binary info) without launching OS File Explorer
+  - In-app folder navigation and file preview (without forcing OS File Explorer)
+- File previews:
+  - image preview for image files
+  - video thumbnail preview for common video formats (when OpenCV is available)
+  - text preview for common code/text formats
+- Double-click behavior:
+  - folders open in-app
+  - openable files launch with system default app
 - Custom file icons/images in explorer view:
-  - map by extension (ex: `.exe`) or by exact file path
+  - map by extension (ex: `.exe`) or exact file path
 - Right side section cards support 2 types:
   - `shortcut`: launches app/file externally
-  - `collection`: opens the selected folder inside this app's explorer panel
-- Section image edit controls:
-  - `contain`, `cover`, `original`, `stretch`
-  - independent `Scale X` / `Scale Y`
-  - live preview
-- Theme Studio supports:
+  - `collection`: opens selected folder inside this app's explorer panel
+- Theme system supports:
   - normal themes (colors + background image)
   - **preset themes** (theme + preloaded sections + file-image mappings)
 
@@ -38,3 +41,4 @@ python app.py
 
 - Python 3.10+
 - Dependencies in `requirements.txt`
+- Optional for video thumbnails: `opencv-python`

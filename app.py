@@ -1,12 +1,18 @@
 import json
 import os
 import subprocess
+import mimetypes
 from datetime import datetime
 from pathlib import Path
 import tkinter as tk
 from tkinter import colorchooser, filedialog, messagebox, simpledialog, ttk
 
 from PIL import Image, ImageDraw, ImageSequence, ImageTk
+
+try:
+    import cv2
+except Exception:
+    cv2 = None
 
 APP_NAME = "Launcher File Explorer"
 CONFIG_FILE = Path("launcher_config.json")
@@ -69,6 +75,7 @@ class LauncherExplorerApp:
         self.root.title(APP_NAME)
         self.root.geometry("1520x940")
         self.root.minsize(1250, 760)
+        self.root.option_add("*Font", "Segoe UI 10")
 
         self.config_data = self.load_config()
         self.theme = self.current_theme()
@@ -77,6 +84,7 @@ class LauncherExplorerApp:
         self.file_icon_cache = {}
         self.file_icon_refs = []
         self.preview_image_ref = None
+        self.preview_text_widget_font = ("Segoe UI", 10)
         self.theme_background_src = None
         self.theme_background_tk = None
 
@@ -201,15 +209,17 @@ class LauncherExplorerApp:
         self.view_combo.bind("<<ComboboxSelected>>", lambda _e: self.populate_file_view())
 
         tk.Label(controls, text="Size:").pack(side="left")
-        tk.Scale(
+        self.left_size_label = tk.Label(controls, text=f"{self.left_size_var.get()}", width=3, anchor="e")
+        self.left_size_label.pack(side="right", padx=(4, 2))
+        self.left_size_slider = ttk.Scale(
             controls,
             from_=20,
             to=64,
-            orient="horizontal",
             variable=self.left_size_var,
-            length=120,
-            command=lambda _v: self.populate_file_view(),
-        ).pack(side="left", padx=(6, 0))
+            command=lambda _v: self.on_left_size_change(),
+            length=140,
+        )
+        self.left_size_slider.pack(side="left", padx=(6, 6))
 
         self.left_pane = tk.PanedWindow(self.left_shell, orient="vertical", sashwidth=6)
         self.left_pane.pack(fill="both", expand=True)
@@ -289,12 +299,25 @@ class LauncherExplorerApp:
         self.sort_combo.bind("<<ComboboxSelected>>", lambda _e: self.render_sections())
 
         tk.Label(toolbar, text="Zoom:", font=("Segoe UI Semibold", 10)).pack(side="left")
-        tk.Scale(toolbar, from_=70, to=170, orient="horizontal", variable=self.zoom_var, length=180, showvalue=True, resolution=5,
-                 command=lambda _v: self.render_sections()).pack(side="left", padx=(8, 0))
+        self.zoom_label = tk.Label(toolbar, text=f"{self.zoom_var.get()}%", width=5, anchor="e")
+        self.zoom_label.pack(side="right", padx=(6, 0))
+        self.zoom_slider = ttk.Scale(toolbar, from_=70, to=170, variable=self.zoom_var, length=180,
+                 command=lambda _v: self.on_zoom_change())
+        self.zoom_slider.pack(side="left", padx=(8, 6))
 
         self.cards_container = tk.Frame(self.content)
         self.cards_container.pack(fill="both", expand=True, padx=24, pady=24)
 
+
+    def on_left_size_change(self):
+        self.left_size_var.set(int(float(self.left_size_var.get())))
+        self.left_size_label.configure(text=f"{int(self.left_size_var.get())}")
+        self.populate_file_view()
+
+    def on_zoom_change(self):
+        self.zoom_var.set(int(float(self.zoom_var.get())))
+        self.zoom_label.configure(text=f"{int(self.zoom_var.get())}%")
+        self.render_sections()
     # ----------------- theme / coloring -----------------
     def apply_theme(self):
         self.theme = self.current_theme()
@@ -304,11 +327,14 @@ class LauncherExplorerApp:
         self.main.configure(bg=t["bg"])
         self.accent_bar.configure(bg=t["secondary"])
 
-        self.style.configure("TButton", padding=(12, 7), font=("Segoe UI Semibold", 10), foreground=t["text"])
-        self.style.map("TButton", background=[("active", t["accent"])])
-        self.style.configure("Treeview", font=("Segoe UI", 10), rowheight=max(22, int(self.left_size_var.get())))
-        self.style.configure("Treeview", background=t["panel"], fieldbackground=t["panel"], foreground=t["text"])
-        self.style.map("Treeview", background=[("selected", t["accent"])], foreground=[("selected", "white")])
+        self.style.configure("TButton", padding=(12, 7), font=("Segoe UI Semibold", 10), foreground=t["text"], borderwidth=0)
+        self.style.map("TButton", background=[("active", t["secondary"]), ("!active", t["card"])], foreground=[("active", "#0b0d13")])
+        self.style.configure("TCombobox", fieldbackground=t["card"], background=t["card"], foreground=t["text"], arrowsize=13)
+        self.style.configure("TEntry", fieldbackground=t["card"], foreground=t["text"])
+        self.style.configure("Treeview", font=("Segoe UI", 10), rowheight=max(24, int(self.left_size_var.get())))
+        self.style.configure("Treeview", background=t["panel"], fieldbackground=t["panel"], foreground=t["text"], borderwidth=0)
+        self.style.configure("Treeview.Heading", background=t["card"], foreground=t["text"], font=("Segoe UI Semibold", 10), relief="flat")
+        self.style.map("Treeview", background=[("selected", t["secondary"])], foreground=[("selected", "#0b0d13")])
 
         self._recolor_recursive(self.root, t)
         self._render_background()
@@ -428,6 +454,7 @@ class LauncherExplorerApp:
             self.set_current_dir(path)
         else:
             self.preview_file(path)
+            self.open_external(path)
 
     def set_current_dir(self, path, render=True):
         if not path:
@@ -469,11 +496,11 @@ class LauncherExplorerApp:
             icon = Image.new("RGBA", (size, size), (0, 0, 0, 0))
             d = ImageDraw.Draw(icon)
             if os.path.isdir(path):
-                color = "#6ce8ff"
+                color = "#8ca9c8"
                 d.rounded_rectangle((1, size * 0.22, size - 2, size - 2), radius=4, fill=color)
                 d.rectangle((2, 2, size * 0.6, size * 0.35), fill=color)
             else:
-                color = "#ff8a3d"
+                color = "#a9b6cc"
                 d.rounded_rectangle((2, 2, size - 2, size - 2), radius=4, fill=color)
 
         tk_img = ImageTk.PhotoImage(icon)
@@ -545,6 +572,7 @@ class LauncherExplorerApp:
             self.set_current_dir(path)
         else:
             self.preview_file(path)
+            self.open_external(path)
 
     def preview_file(self, path):
         self.preview_title.configure(text=path)
@@ -560,16 +588,28 @@ class LauncherExplorerApp:
             return
 
         ext = Path(path).suffix.lower()
+        mime, _ = mimetypes.guess_type(path)
+
         if ext in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}:
             try:
                 img = Image.open(path).convert("RGBA")
-                img.thumbnail((240, 240), Image.Resampling.LANCZOS)
+                img.thumbnail((300, 220), Image.Resampling.LANCZOS)
                 self.preview_image_ref = ImageTk.PhotoImage(img)
                 self.preview_text.image_create("end", image=self.preview_image_ref)
                 self.preview_text.insert("end", "\n\nImage preview in-app.")
                 return
             except Exception:
                 pass
+
+        if ext in {".mp4", ".mkv", ".avi", ".mov", ".webm", ".wmv"} or (mime and mime.startswith("video/")):
+            thumb = self.video_thumbnail(path)
+            if thumb is not None:
+                self.preview_image_ref = thumb
+                self.preview_text.image_create("end", image=self.preview_image_ref)
+                self.preview_text.insert("end", "\n\nVideo thumbnail preview in-app. Double-click to open with your system player.")
+                return
+            self.preview_text.insert("end", "Video detected. Thumbnail could not be generated on this environment.")
+            return
 
         if ext in {".txt", ".md", ".json", ".py", ".ini", ".log", ".csv", ".js", ".html", ".css"}:
             try:
@@ -579,7 +619,25 @@ class LauncherExplorerApp:
             except Exception:
                 pass
 
-        self.preview_text.insert("end", "Unsupported preview type (binary / media).")
+        self.preview_text.insert("end", "Binary/unsupported preview. Double-click to open with system default app.")
+
+    def video_thumbnail(self, path):
+        if cv2 is None:
+            return None
+        try:
+            cap = cv2.VideoCapture(path)
+            if not cap.isOpened():
+                return None
+            ok, frame = cap.read()
+            cap.release()
+            if not ok or frame is None:
+                return None
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            img = Image.fromarray(frame)
+            img.thumbnail((300, 220), Image.Resampling.LANCZOS)
+            return ImageTk.PhotoImage(img)
+        except Exception:
+            return None
 
     def _format_size(self, size):
         units = ["B", "KB", "MB", "GB", "TB"]
