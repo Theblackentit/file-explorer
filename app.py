@@ -60,6 +60,7 @@ class LauncherExplorerApp:
         self.apply_theme()
         self.populate_roots()
         self.render_sections()
+        self.root.protocol("WM_DELETE_WINDOW", self.on_app_close)
 
     def load_config(self):
         if not CONFIG_FILE.exists():
@@ -82,6 +83,13 @@ class LauncherExplorerApp:
     def save_config(self):
         with CONFIG_FILE.open("w", encoding="utf-8") as f:
             json.dump(self.config_data, f, indent=2)
+
+    def on_app_close(self):
+        try:
+            self.save_config()
+        except Exception as exc:
+            messagebox.showwarning(APP_NAME, f"Could not save settings before exit:\n{exc}")
+        self.root.destroy()
 
     def current_theme(self):
         name = self.config_data.get("theme", "arc-neon")

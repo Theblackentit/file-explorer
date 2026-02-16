@@ -19,6 +19,7 @@ A modern desktop launcher + file explorer app built with Python/Tkinter.
 - Explorer-style section scaling and sorting:
   - global **Zoom** slider to scale card/file tiles up or down
   - sorting by **Alphabetical**, **Size**, or **Date**
+- Auto-save on app close: current config (themes, sections, mappings) is saved when exiting the app.
 - Full filesystem tree browser with double-click open.
 
 ## Run locally
