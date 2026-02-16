@@ -90,6 +90,8 @@ class LauncherExplorerApp:
         self.section_images = []
         self.file_icon_cache = {}
         self.file_icon_refs = []
+        self.icon_grid_cards = {}
+        self.icon_grid_items = []
         self.preview_image_ref = None
         self.preview_text_widget_font = ("Segoe UI", 10)
         self.theme_background_src = None
@@ -286,6 +288,7 @@ class LauncherExplorerApp:
         self.icon_grid_canvas.configure(yscrollcommand=self.icon_grid_scroll.set)
         self.icon_grid_canvas.create_window((0, 0), window=self.icon_grid_inner, anchor="nw")
         self.icon_grid_inner.bind("<Configure>", lambda _e: self.icon_grid_canvas.configure(scrollregion=self.icon_grid_canvas.bbox("all")))
+        self.icon_grid_canvas.bind("<Configure>", self.on_icon_canvas_resize)
         self.icon_grid_canvas.pack(side="left", fill="both", expand=True)
         self.icon_grid_scroll.pack(side="right", fill="y")
 
@@ -341,6 +344,10 @@ class LauncherExplorerApp:
 
     def on_window_configure(self, _event):
         self.render_gradients()
+
+    def on_icon_canvas_resize(self, _event):
+        if self.left_view_var.get() == "Icons" and self.current_dir_var.get().strip():
+            self.render_icon_grid()
 
     def render_gradients(self):
         self.header_gradient_tk = self.create_gradient_image(
@@ -599,6 +606,7 @@ class LauncherExplorerApp:
     def populate_file_view(self):
         for child in self.icon_grid_inner.winfo_children():
             child.destroy()
+        self.icon_grid_cards.clear()
 
         for row in self.file_view.get_children():
             self.file_view.delete(row)
@@ -649,15 +657,25 @@ class LauncherExplorerApp:
             except OSError:
                 modified = ""
             icon = self.icon_for_path(full)
-            text = name if mode != "Icons" else f"   {name}"
-            self.file_view.insert("", "end", text=text, image=icon, values=(size, typ, modified, full))
+            if mode != "Icons":
+                self.file_view.insert("", "end", text=name, image=icon, values=(size, typ, modified, full))
 
         if mode == "Icons":
-            self.populate_icon_grid(names, current)
+            self.icon_grid_items = names
+            self.render_icon_grid()
 
         self.write_explorer_settings()
 
-    def populate_icon_grid(self, names, current):
+    def render_icon_grid(self):
+        names = self.icon_grid_items
+        current = self.current_dir_var.get().strip()
+        for child in self.icon_grid_inner.winfo_children():
+            child.destroy()
+        self.icon_grid_cards.clear()
+
+        if not current or not os.path.isdir(current):
+            return
+
         cell_w = 170
         cell_h = 128
         width = max(1, self.icon_grid_canvas.winfo_width())
@@ -681,6 +699,7 @@ class LauncherExplorerApp:
             title.pack(fill="x", padx=8)
 
             self._paint_icon_card(card, selected=(full == self.selected_icon_path))
+            self.icon_grid_cards[full] = card
 
             for widget in (card, icon_lbl, title):
                 widget.bind("<Button-1>", lambda _e, p=full: self.select_icon_item(p))
@@ -697,9 +716,13 @@ class LauncherExplorerApp:
                 child.configure(bg=bg, fg=fg)
 
     def select_icon_item(self, path):
+        old = self.selected_icon_path
         self.selected_icon_path = path
         self.preview_file(path)
-        self.populate_file_view()
+        if old in self.icon_grid_cards:
+            self._paint_icon_card(self.icon_grid_cards[old], selected=False)
+        if path in self.icon_grid_cards:
+            self._paint_icon_card(self.icon_grid_cards[path], selected=True)
 
     def open_icon_item(self, path):
         self.select_icon_item(path)
