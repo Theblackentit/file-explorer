@@ -15,6 +15,9 @@ A modern desktop launcher + file explorer app built with Python/Tkinter.
   - **Image mode**: `contain`, `cover`, `original`, `stretch`
   - **Scale X / Scale Y** sliders to stretch or shrink manually
   - Live preview before saving
+- Explorer-style section scaling and sorting:
+  - global **Zoom** slider to scale card/file tiles up or down
+  - sorting by **Alphabetical**, **Size**, or **Date**
 - Full filesystem tree browser with double-click open.
 
 ## Run locally

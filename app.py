@@ -150,6 +150,44 @@ class LauncherExplorerApp:
         self.scroll.pack(side="right", fill="y")
 
         self.bg_item = None
+        self.zoom_var = tk.IntVar(value=100)
+        self.sort_var = tk.StringVar(value="Alphabetical (A-Z)")
+
+        self.cards_toolbar = tk.Frame(self.content)
+        self.cards_toolbar.pack(fill="x", padx=24, pady=(18, 0))
+
+        tk.Label(self.cards_toolbar, text="Sort:", font=("Segoe UI Semibold", 10)).pack(side="left")
+        self.sort_combo = ttk.Combobox(
+            self.cards_toolbar,
+            textvariable=self.sort_var,
+            values=[
+                "Alphabetical (A-Z)",
+                "Alphabetical (Z-A)",
+                "Size (Largest)",
+                "Size (Smallest)",
+                "Date (Newest)",
+                "Date (Oldest)",
+            ],
+            state="readonly",
+            width=22,
+        )
+        self.sort_combo.pack(side="left", padx=(8, 16))
+        self.sort_combo.bind("<<ComboboxSelected>>", lambda _e: self.render_sections())
+
+        tk.Label(self.cards_toolbar, text="Zoom:", font=("Segoe UI Semibold", 10)).pack(side="left")
+        self.zoom_scale = tk.Scale(
+            self.cards_toolbar,
+            from_=70,
+            to=170,
+            orient="horizontal",
+            variable=self.zoom_var,
+            length=180,
+            showvalue=True,
+            resolution=5,
+            command=lambda _v: self.render_sections(),
+        )
+        self.zoom_scale.pack(side="left", padx=(8, 0))
+
         self.cards_container = tk.Frame(self.content)
         self.cards_container.pack(fill="both", expand=True, padx=24, pady=24)
 
@@ -605,25 +643,33 @@ class LauncherExplorerApp:
             child.destroy()
         self.section_images.clear()
 
-        sections = self.config_data.get("sections", [])
-        cols = 4
-        for idx, section in enumerate(sections):
-            row, col = divmod(idx, cols)
-            card = tk.Frame(self.cards_container, width=320, height=260, bd=0, relief="flat")
+        zoom = max(70, min(170, int(self.zoom_var.get()))) / 100
+        card_w = int(320 * zoom)
+        card_h = int(260 * zoom)
+        img_w = int(286 * zoom)
+        img_h = int(142 * zoom)
+        name_font = max(10, int(13 * zoom))
+        path_font = max(8, int(8 * zoom))
+
+        sorted_sections = self.get_sorted_sections()
+        cols = 4 if zoom <= 1 else 3
+        for display_idx, (idx, section) in enumerate(sorted_sections):
+            row, col = divmod(display_idx, cols)
+            card = tk.Frame(self.cards_container, width=card_w, height=card_h, bd=0, relief="flat")
             card.grid(row=row, column=col, padx=12, pady=12, sticky="nsew")
             card.grid_propagate(False)
 
-            img = self.build_preview(section, size=(286, 142))
+            img = self.build_preview(section, size=(img_w, img_h))
             if img:
                 image_label = tk.Label(card, image=img)
                 image_label.image = img
                 self.section_images.append(img)
             else:
-                image_label = tk.Label(card, text="No image", font=("Segoe UI", 10))
+                image_label = tk.Label(card, text="No image", font=("Segoe UI", max(9, int(10 * zoom))))
             image_label.pack(pady=(12, 8))
 
-            tk.Label(card, text=section.get("name", "Unnamed"), font=("Segoe UI Semibold", 13)).pack()
-            tk.Label(card, text=section.get("path", ""), font=("Segoe UI", 8), wraplength=286).pack(pady=(2, 8))
+            tk.Label(card, text=section.get("name", "Unnamed"), font=("Segoe UI Semibold", name_font)).pack()
+            tk.Label(card, text=section.get("path", ""), font=("Segoe UI", path_font), wraplength=img_w).pack(pady=(2, 8))
 
             row_btns = tk.Frame(card)
             row_btns.pack(pady=4)
@@ -635,6 +681,34 @@ class LauncherExplorerApp:
                 child.bind("<Button-3>", lambda e, i=idx: self.section_context_menu(e, i))
 
             self._paint_card(card)
+
+    def _section_file_stats(self, path):
+        if not path or not os.path.exists(path):
+            return 0, 0
+        try:
+            stat = os.stat(path)
+            return int(stat.st_size), float(stat.st_mtime)
+        except OSError:
+            return 0, 0
+
+    def get_sorted_sections(self):
+        sections = list(enumerate(self.config_data.get("sections", [])))
+        mode = self.sort_var.get().strip().lower()
+
+        if mode == "alphabetical (z-a)":
+            sections.sort(key=lambda x: x[1].get("name", "").lower(), reverse=True)
+        elif mode == "size (largest)":
+            sections.sort(key=lambda x: self._section_file_stats(x[1].get("path", ""))[0], reverse=True)
+        elif mode == "size (smallest)":
+            sections.sort(key=lambda x: self._section_file_stats(x[1].get("path", ""))[0])
+        elif mode == "date (newest)":
+            sections.sort(key=lambda x: self._section_file_stats(x[1].get("path", ""))[1], reverse=True)
+        elif mode == "date (oldest)":
+            sections.sort(key=lambda x: self._section_file_stats(x[1].get("path", ""))[1])
+        else:
+            sections.sort(key=lambda x: x[1].get("name", "").lower())
+
+        return sections
 
     def _paint_card(self, card):
         t = self.theme
