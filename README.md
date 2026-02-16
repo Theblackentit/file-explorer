@@ -2,25 +2,26 @@
 
 A modern desktop launcher + file explorer app built with Python/Tkinter.
 
-## What's improved
+## Highlights
 
-- Crunchyroll / ZZZ-inspired dark neon style with cleaner cards and stronger accents.
-- Add/Edit sections using file/folder pickers (no manual path typing required).
-- Right-click card menu for quick Edit / Change Image / Delete.
-- Theme Studio with:
-  - color wheel pickers (`🎨`) + hex,
-  - custom background image that now applies visibly to the launcher area,
-  - stickers and small GIF support,
-  - **Apply** button at the top (and **Apply Selected** at bottom) to instantly switch themes.
-- Section image controls in Edit mode:
-  - **Image mode**: `contain`, `cover`, `original`, `stretch`
-  - **Scale X / Scale Y** sliders to stretch or shrink manually
-  - Live preview before saving
-- Explorer-style section scaling and sorting:
-  - global **Zoom** slider to scale card/file tiles up or down
-  - sorting by **Alphabetical**, **Size**, or **Date**
-- Auto-save on app close: current config (themes, sections, mappings) is saved when exiting the app.
-- Full filesystem tree browser with double-click open.
+- Crunchyroll / ZZZ-inspired dark neon style.
+- Full in-app file explorer behavior on the **left side**:
+  - Layout toggle: `Tree + Files`, `Tree Only`, `Files Only`
+  - View toggle: `Details`, `List`, `Icons`
+  - Size slider to scale rows/icons similar to File Explorer icon-size changes
+  - In-app folder navigation and file preview (image/text/binary info) without launching OS File Explorer
+- Custom file icons/images in explorer view:
+  - map by extension (ex: `.exe`) or by exact file path
+- Right side section cards support 2 types:
+  - `shortcut`: launches app/file externally
+  - `collection`: opens the selected folder inside this app's explorer panel
+- Section image edit controls:
+  - `contain`, `cover`, `original`, `stretch`
+  - independent `Scale X` / `Scale Y`
+  - live preview
+- Theme Studio supports:
+  - normal themes (colors + background image)
+  - **preset themes** (theme + preloaded sections + file-image mappings)
 
 ## Run locally
 
@@ -30,29 +31,8 @@ python app.py
 
 ## Build a clickable executable (Windows)
 
-1. Double-click `build_executable.bat`.
-2. Open:
-
-```text
-dist\LauncherExplorer\LauncherExplorer.exe
-```
-
-## Troubleshooting missing `dist`
-
-Run in the project folder:
-
-```bash
-python --version
-python -m pip show pyinstaller
-python -m pip install -r requirements.txt
-python -m PyInstaller --noconfirm --windowed --name LauncherExplorer app.py
-```
-
-Then search:
-
-```bash
-dir /s /b LauncherExplorer.exe
-```
+1. Double-click `build_executable.bat`
+2. Open `dist\LauncherExplorer\LauncherExplorer.exe`
 
 ## Requirements
 

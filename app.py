@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+from datetime import datetime
 from pathlib import Path
 import tkinter as tk
 from tkinter import colorchooser, filedialog, messagebox, simpledialog, ttk
@@ -34,8 +35,31 @@ DEFAULT_CONFIG = {
             "stickers": [],
         },
     },
+    "preset_themes": {
+        "Starter Neon": {
+            "theme_name": "arc-neon",
+            "theme": {
+                "bg": "#090b17",
+                "panel": "#11162a",
+                "card": "#171f39",
+                "text": "#f2f4ff",
+                "accent": "#ff8a3d",
+                "secondary": "#6ce8ff",
+                "background_image": "",
+                "stickers": [],
+            },
+            "sections": [],
+            "file_images": {},
+        }
+    },
     "sections": [],
     "file_images": {},
+    "explorer": {
+        "view": "Details",
+        "layout": "Tree + Files",
+        "size": 28,
+        "current_dir": "",
+    },
 }
 
 
@@ -43,25 +67,31 @@ class LauncherExplorerApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title(APP_NAME)
-        self.root.geometry("1460x900")
-        self.root.minsize(1200, 760)
+        self.root.geometry("1520x940")
+        self.root.minsize(1250, 760)
 
         self.config_data = self.load_config()
         self.theme = self.current_theme()
 
-        self.theme_background_tk = None
-        self.theme_background_src = None
-        self.sticker_items = []
-        self.sticker_after_jobs = []
         self.section_images = []
+        self.file_icon_cache = {}
+        self.file_icon_refs = []
+        self.preview_image_ref = None
+        self.theme_background_src = None
+        self.theme_background_tk = None
 
         self.setup_style()
         self.build_ui()
         self.apply_theme()
         self.populate_roots()
+        self.sync_explorer_controls_from_config()
+        self.set_current_dir(self.config_data.get("explorer", {}).get("current_dir", ""), render=False)
+        self.populate_file_view()
         self.render_sections()
+
         self.root.protocol("WM_DELETE_WINDOW", self.on_app_close)
 
+    # ----------------- config -----------------
     def load_config(self):
         if not CONFIG_FILE.exists():
             return json.loads(json.dumps(DEFAULT_CONFIG))
@@ -72,8 +102,14 @@ class LauncherExplorerApp:
         merged = json.loads(json.dumps(DEFAULT_CONFIG))
         merged.update(loaded)
         merged["themes"] = {**DEFAULT_CONFIG["themes"], **loaded.get("themes", {})}
+        merged["preset_themes"] = {**DEFAULT_CONFIG["preset_themes"], **loaded.get("preset_themes", {})}
+        merged["explorer"] = {**DEFAULT_CONFIG["explorer"], **loaded.get("explorer", {})}
 
         for section in merged.get("sections", []):
+            section.setdefault("name", "Unnamed")
+            section.setdefault("type", "shortcut")
+            section.setdefault("path", "")
+            section.setdefault("image", "")
             section.setdefault("shape", "rounded")
             section.setdefault("image_mode", "contain")
             section.setdefault("scale_x", 100)
@@ -81,6 +117,7 @@ class LauncherExplorerApp:
         return merged
 
     def save_config(self):
+        self.write_explorer_settings()
         with CONFIG_FILE.open("w", encoding="utf-8") as f:
             json.dump(self.config_data, f, indent=2)
 
@@ -91,6 +128,7 @@ class LauncherExplorerApp:
             messagebox.showwarning(APP_NAME, f"Could not save settings before exit:\n{exc}")
         self.root.destroy()
 
+    # ----------------- ui scaffold -----------------
     def current_theme(self):
         name = self.config_data.get("theme", "arc-neon")
         return self.config_data["themes"].get(name, DEFAULT_CONFIG["themes"]["arc-neon"])
@@ -101,26 +139,21 @@ class LauncherExplorerApp:
             self.style.theme_use("clam")
 
     def build_ui(self):
-        top_shell = tk.Frame(self.root, height=86)
-        top_shell.pack(fill="x", padx=12, pady=(10, 6))
+        top = tk.Frame(self.root, height=84)
+        top.pack(fill="x", padx=12, pady=(10, 6))
 
-        title = tk.Label(top_shell, text=APP_NAME, font=("Segoe UI Semibold", 22))
-        title.pack(side="left", padx=(10, 20), pady=(8, 0))
+        tk.Label(top, text=APP_NAME, font=("Segoe UI Semibold", 22)).pack(side="left", padx=(10, 20), pady=(8, 0))
+        tk.Label(top, text="Anime launcher vibe • custom themes • rich cards", font=("Segoe UI", 10)).pack(side="left", pady=(12, 0))
 
-        sub = tk.Label(top_shell, text="Anime launcher vibe • custom themes • rich cards", font=("Segoe UI", 10))
-        sub.pack(side="left", pady=(12, 0))
-
-        btns = tk.Frame(top_shell)
-        btns.pack(side="right", padx=8, pady=8)
-
-        actions = [
+        actions = tk.Frame(top)
+        actions.pack(side="right", padx=8, pady=8)
+        for txt, cb in [
             ("+ Add Section", self.add_section),
             ("Map File Image", self.map_file_image),
             ("Theme Studio", self.open_theme_studio),
             ("Refresh", self.refresh),
-        ]
-        for text, fn in actions:
-            ttk.Button(btns, text=text, command=fn).pack(side="left", padx=4)
+        ]:
+            ttk.Button(actions, text=txt, command=cb).pack(side="left", padx=4)
 
         self.accent_bar = tk.Canvas(self.root, height=4, highlightthickness=0)
         self.accent_bar.pack(fill="x", padx=12, pady=(0, 8))
@@ -128,26 +161,108 @@ class LauncherExplorerApp:
         self.main = tk.PanedWindow(self.root, orient="horizontal", sashwidth=8, bd=0)
         self.main.pack(fill="both", expand=True, padx=12, pady=(0, 10))
 
-        left = tk.Frame(self.main, width=380)
-        right = tk.Frame(self.main)
-        self.main.add(left)
-        self.main.add(right)
+        self.left_shell = tk.Frame(self.main, width=500)
+        self.right_shell = tk.Frame(self.main)
+        self.main.add(self.left_shell)
+        self.main.add(self.right_shell)
 
-        self.tree = ttk.Treeview(left, columns=("fullpath",), show="tree")
-        scroll = ttk.Scrollbar(left, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scroll.set)
+        self.build_left_side()
+        self.build_right_side()
+
+    def build_left_side(self):
+        controls = tk.Frame(self.left_shell)
+        controls.pack(fill="x", padx=6, pady=(4, 6))
+
+        self.left_layout_var = tk.StringVar(value="Tree + Files")
+        self.left_view_var = tk.StringVar(value="Details")
+        self.left_size_var = tk.IntVar(value=28)
+        self.current_dir_var = tk.StringVar(value="")
+
+        tk.Label(controls, text="Layout:").pack(side="left")
+        self.layout_combo = ttk.Combobox(
+            controls,
+            textvariable=self.left_layout_var,
+            values=["Tree + Files", "Tree Only", "Files Only"],
+            state="readonly",
+            width=12,
+        )
+        self.layout_combo.pack(side="left", padx=(6, 10))
+        self.layout_combo.bind("<<ComboboxSelected>>", lambda _e: self.apply_left_layout())
+
+        tk.Label(controls, text="View:").pack(side="left")
+        self.view_combo = ttk.Combobox(
+            controls,
+            textvariable=self.left_view_var,
+            values=["Details", "List", "Icons"],
+            state="readonly",
+            width=9,
+        )
+        self.view_combo.pack(side="left", padx=(6, 10))
+        self.view_combo.bind("<<ComboboxSelected>>", lambda _e: self.populate_file_view())
+
+        tk.Label(controls, text="Size:").pack(side="left")
+        tk.Scale(
+            controls,
+            from_=20,
+            to=64,
+            orient="horizontal",
+            variable=self.left_size_var,
+            length=120,
+            command=lambda _v: self.populate_file_view(),
+        ).pack(side="left", padx=(6, 0))
+
+        self.left_pane = tk.PanedWindow(self.left_shell, orient="vertical", sashwidth=6)
+        self.left_pane.pack(fill="both", expand=True)
+
+        self.tree_frame = tk.Frame(self.left_pane)
+        self.files_frame = tk.Frame(self.left_pane)
+        self.left_pane.add(self.tree_frame)
+        self.left_pane.add(self.files_frame)
+
+        self.tree = ttk.Treeview(self.tree_frame, columns=("fullpath",), show="tree")
+        tree_scroll = ttk.Scrollbar(self.tree_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=tree_scroll.set)
         self.tree.pack(side="left", fill="both", expand=True)
-        scroll.pack(side="right", fill="y")
-
+        tree_scroll.pack(side="right", fill="y")
         self.tree.bind("<<TreeviewOpen>>", self.on_tree_open)
+        self.tree.bind("<<TreeviewSelect>>", self.on_tree_select)
         self.tree.bind("<Double-1>", self.on_tree_double_click)
 
-        right_shell = tk.Frame(right)
-        right_shell.pack(fill="both", expand=True)
+        path_row = tk.Frame(self.files_frame)
+        path_row.pack(fill="x", padx=4, pady=4)
+        tk.Label(path_row, text="Path:").pack(side="left")
+        ttk.Entry(path_row, textvariable=self.current_dir_var).pack(side="left", fill="x", expand=True, padx=(6, 6))
+        ttk.Button(path_row, text="Go", command=lambda: self.set_current_dir(self.current_dir_var.get().strip())).pack(side="left")
 
-        self.canvas = tk.Canvas(right_shell, highlightthickness=0)
-        self.scroll = ttk.Scrollbar(right_shell, orient="vertical", command=self.canvas.yview)
-        self.canvas.configure(yscrollcommand=self.scroll.set)
+        self.file_view = ttk.Treeview(self.files_frame, columns=("size", "type", "modified", "fullpath"), show="tree headings")
+        self.file_view.heading("#0", text="Name")
+        self.file_view.heading("size", text="Size")
+        self.file_view.heading("type", text="Type")
+        self.file_view.heading("modified", text="Modified")
+        self.file_view.column("#0", width=240, anchor="w")
+        self.file_view.column("size", width=90, anchor="e")
+        self.file_view.column("type", width=90, anchor="w")
+        self.file_view.column("modified", width=150, anchor="w")
+        self.file_view.column("fullpath", width=0, stretch=False)
+
+        file_scroll = ttk.Scrollbar(self.files_frame, orient="vertical", command=self.file_view.yview)
+        self.file_view.configure(yscrollcommand=file_scroll.set)
+        self.file_view.pack(side="left", fill="both", expand=True, padx=(4, 0), pady=(0, 4))
+        file_scroll.pack(side="right", fill="y", pady=(0, 4))
+        self.file_view.bind("<Double-1>", self.on_file_view_double_click)
+        self.file_view.bind("<<TreeviewSelect>>", self.on_file_view_select)
+
+        preview = tk.LabelFrame(self.files_frame, text="In-app preview")
+        preview.pack(fill="x", padx=4, pady=(0, 4))
+        self.preview_title = tk.Label(preview, text="Select a file/folder", anchor="w")
+        self.preview_title.pack(fill="x", padx=6, pady=(4, 2))
+        self.preview_text = tk.Text(preview, height=5, wrap="word")
+        self.preview_text.pack(fill="x", padx=6, pady=(0, 6))
+
+    def build_right_side(self):
+        self.canvas = tk.Canvas(self.right_shell, highlightthickness=0)
+        self.rscroll = ttk.Scrollbar(self.right_shell, orient="vertical", command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=self.rscroll.set)
 
         self.content = tk.Frame(self.canvas)
         self.content.bind("<Configure>", lambda _e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
@@ -155,49 +270,32 @@ class LauncherExplorerApp:
         self.canvas.bind("<Configure>", self._on_canvas_resize)
 
         self.canvas.pack(side="left", fill="both", expand=True)
-        self.scroll.pack(side="right", fill="y")
+        self.rscroll.pack(side="right", fill="y")
 
         self.zoom_var = tk.IntVar(value=100)
         self.sort_var = tk.StringVar(value="Alphabetical (A-Z)")
 
-        self.cards_toolbar = tk.Frame(self.content)
-        self.cards_toolbar.pack(fill="x", padx=24, pady=(18, 0))
-
-        tk.Label(self.cards_toolbar, text="Sort:", font=("Segoe UI Semibold", 10)).pack(side="left")
+        toolbar = tk.Frame(self.content)
+        toolbar.pack(fill="x", padx=24, pady=(18, 0))
+        tk.Label(toolbar, text="Sort:", font=("Segoe UI Semibold", 10)).pack(side="left")
         self.sort_combo = ttk.Combobox(
-            self.cards_toolbar,
+            toolbar,
             textvariable=self.sort_var,
-            values=[
-                "Alphabetical (A-Z)",
-                "Alphabetical (Z-A)",
-                "Size (Largest)",
-                "Size (Smallest)",
-                "Date (Newest)",
-                "Date (Oldest)",
-            ],
+            values=["Alphabetical (A-Z)", "Alphabetical (Z-A)", "Size (Largest)", "Size (Smallest)", "Date (Newest)", "Date (Oldest)"],
             state="readonly",
             width=22,
         )
         self.sort_combo.pack(side="left", padx=(8, 16))
         self.sort_combo.bind("<<ComboboxSelected>>", lambda _e: self.render_sections())
 
-        tk.Label(self.cards_toolbar, text="Zoom:", font=("Segoe UI Semibold", 10)).pack(side="left")
-        self.zoom_scale = tk.Scale(
-            self.cards_toolbar,
-            from_=70,
-            to=170,
-            orient="horizontal",
-            variable=self.zoom_var,
-            length=180,
-            showvalue=True,
-            resolution=5,
-            command=lambda _v: self.render_sections(),
-        )
-        self.zoom_scale.pack(side="left", padx=(8, 0))
+        tk.Label(toolbar, text="Zoom:", font=("Segoe UI Semibold", 10)).pack(side="left")
+        tk.Scale(toolbar, from_=70, to=170, orient="horizontal", variable=self.zoom_var, length=180, showvalue=True, resolution=5,
+                 command=lambda _v: self.render_sections()).pack(side="left", padx=(8, 0))
 
         self.cards_container = tk.Frame(self.content)
         self.cards_container.pack(fill="both", expand=True, padx=24, pady=24)
 
+    # ----------------- theme / coloring -----------------
     def apply_theme(self):
         self.theme = self.current_theme()
         t = self.theme
@@ -208,17 +306,16 @@ class LauncherExplorerApp:
 
         self.style.configure("TButton", padding=(12, 7), font=("Segoe UI Semibold", 10), foreground=t["text"])
         self.style.map("TButton", background=[("active", t["accent"])])
-        self.style.configure("Treeview", font=("Segoe UI", 10), rowheight=28)
+        self.style.configure("Treeview", font=("Segoe UI", 10), rowheight=max(22, int(self.left_size_var.get())))
         self.style.configure("Treeview", background=t["panel"], fieldbackground=t["panel"], foreground=t["text"])
         self.style.map("Treeview", background=[("selected", t["accent"])], foreground=[("selected", "white")])
 
         self._recolor_recursive(self.root, t)
         self._render_background()
-        self._render_stickers()
 
     def _recolor_recursive(self, widget, theme):
         cls = widget.winfo_class()
-        if cls in {"Frame", "PanedWindow"}:
+        if cls in {"Frame", "PanedWindow", "Labelframe"}:
             widget.configure(bg=theme["bg"])
         elif cls == "Canvas":
             widget.configure(bg=theme["panel"])
@@ -233,7 +330,6 @@ class LauncherExplorerApp:
 
     def _render_background(self):
         path = self.theme.get("background_image", "")
-
         width = max(self.canvas.winfo_width(), 900)
         height = max(self.canvas.winfo_height(), 600)
 
@@ -244,81 +340,54 @@ class LauncherExplorerApp:
             return
 
         if self.theme_background_src != (path, width, height):
-            img = Image.open(path).convert("RGBA")
-            img = img.resize((width, height), Image.Resampling.LANCZOS)
+            img = Image.open(path).convert("RGBA").resize((width, height), Image.Resampling.LANCZOS)
             shade = Image.new("RGBA", img.size, (0, 0, 0, 105))
             img.alpha_composite(shade)
             self.theme_background_tk = ImageTk.PhotoImage(img)
             self.theme_background_src = (path, width, height)
 
-        self.content.configure(bg=self.theme["panel"])
         if not hasattr(self, "background_label"):
             self.background_label = tk.Label(self.content, bd=0, highlightthickness=0)
-            self.background_label.place(x=0, y=0, relwidth=1, relheight=1)
-
+            self.background_label.place(x=0, y=0)
         self.background_label.configure(image=self.theme_background_tk)
         self.background_label.image = self.theme_background_tk
         self.background_label.place(x=0, y=0, width=width, height=height)
         self.background_label.lower()
-        self.cards_toolbar.lift()
         self.cards_container.lift()
 
-    def clear_stickers(self):
-        for job in self.sticker_after_jobs:
-            self.root.after_cancel(job)
-        self.sticker_after_jobs.clear()
+    # ----------------- left explorer feature set -----------------
+    def sync_explorer_controls_from_config(self):
+        ex = self.config_data.get("explorer", {})
+        self.left_layout_var.set(ex.get("layout", "Tree + Files"))
+        self.left_view_var.set(ex.get("view", "Details"))
+        self.left_size_var.set(int(ex.get("size", 28)))
+        self.apply_left_layout()
 
-        for item in self.sticker_items:
-            item["label"].destroy()
-        self.sticker_items.clear()
+    def write_explorer_settings(self):
+        self.config_data.setdefault("explorer", {})
+        self.config_data["explorer"]["layout"] = self.left_layout_var.get()
+        self.config_data["explorer"]["view"] = self.left_view_var.get()
+        self.config_data["explorer"]["size"] = int(self.left_size_var.get())
+        self.config_data["explorer"]["current_dir"] = self.current_dir_var.get().strip()
 
-    def _render_stickers(self):
-        self.clear_stickers()
-        for sticker in self.theme.get("stickers", []):
-            path = sticker.get("path", "")
-            if not path or not os.path.exists(path):
-                continue
-
-            label = tk.Label(self.content, bd=0, highlightthickness=0)
-            label.place(x=int(sticker.get("x", 20)), y=int(sticker.get("y", 20)))
-            size = max(24, int(sticker.get("size", 96)))
-
-            if path.lower().endswith(".gif"):
-                gif = Image.open(path)
-                frames = [
-                    ImageTk.PhotoImage(frame.convert("RGBA").resize((size, size), Image.Resampling.LANCZOS))
-                    for frame in ImageSequence.Iterator(gif)
-                ]
-                if not frames:
-                    label.destroy()
-                    continue
-                item = {"label": label, "frames": frames, "index": 0}
-                self.sticker_items.append(item)
-                self._animate_sticker(item)
-            else:
-                frame = Image.open(path).convert("RGBA").resize((size, size), Image.Resampling.LANCZOS)
-                tk_img = ImageTk.PhotoImage(frame)
-                label.configure(image=tk_img)
-                label.image = tk_img
-                self.sticker_items.append({"label": label, "frames": [tk_img], "index": 0})
-
-    def _animate_sticker(self, sticker):
-        frames = sticker["frames"]
-        idx = sticker["index"] % len(frames)
-        sticker["label"].configure(image=frames[idx])
-        sticker["label"].image = frames[idx]
-        sticker["index"] = (idx + 1) % len(frames)
-        self.sticker_after_jobs.append(self.root.after(110, lambda s=sticker: self._animate_sticker(s)))
+    def apply_left_layout(self):
+        layout = self.left_layout_var.get()
+        self.left_pane.forget(self.tree_frame)
+        self.left_pane.forget(self.files_frame)
+        if layout in {"Tree + Files", "Tree Only"}:
+            self.left_pane.add(self.tree_frame)
+        if layout in {"Tree + Files", "Files Only"}:
+            self.left_pane.add(self.files_frame)
+        self.write_explorer_settings()
 
     def populate_roots(self):
         self.tree.delete(*self.tree.get_children())
         if os.name == "nt":
-            drives = [f"{d}:\\" for d in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if os.path.exists(f"{d}:\\")]
-            for drive in drives:
-                node = self.tree.insert("", "end", text=drive, values=(drive,))
-                self.tree.insert(node, "end", text="...")
+            roots = [f"{d}:\\" for d in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if os.path.exists(f"{d}:\\")]
         else:
-            node = self.tree.insert("", "end", text="/", values=("/",))
+            roots = ["/"]
+        for root in roots:
+            node = self.tree.insert("", "end", text=root, values=(root,))
             self.tree.insert(node, "end", text="...")
 
     def on_tree_open(self, _event):
@@ -326,7 +395,6 @@ class LauncherExplorerApp:
         path = self.tree.set(node, "fullpath")
         if not path:
             return
-
         children = self.tree.get_children(node)
         if children and self.tree.item(children[0], "text") != "...":
             return
@@ -338,36 +406,208 @@ class LauncherExplorerApp:
                 child = self.tree.insert(node, "end", text=name, values=(full,))
                 if os.path.isdir(full):
                     self.tree.insert(child, "end", text="...")
-        except PermissionError:
+        except (PermissionError, FileNotFoundError):
             return
+
+    def on_tree_select(self, _event):
+        node = self.tree.focus()
+        path = self.tree.set(node, "fullpath")
+        if not path:
+            return
+        if os.path.isdir(path):
+            self.set_current_dir(path)
+        else:
+            self.set_current_dir(os.path.dirname(path))
 
     def on_tree_double_click(self, _event):
         node = self.tree.focus()
-        self.open_path(self.tree.set(node, "fullpath"))
-
-    def open_path(self, path):
+        path = self.tree.set(node, "fullpath")
         if not path:
             return
-        if os.name == "nt":
-            os.startfile(path)
+        if os.path.isdir(path):
+            self.set_current_dir(path)
         else:
-            subprocess.Popen(["xdg-open", path])
+            self.preview_file(path)
 
+    def set_current_dir(self, path, render=True):
+        if not path:
+            return
+        if os.path.isfile(path):
+            path = os.path.dirname(path)
+        if not os.path.isdir(path):
+            return
+        self.current_dir_var.set(path)
+        self.write_explorer_settings()
+        if render:
+            self.populate_file_view()
+
+    def map_image_for_path(self, path):
+        images = self.config_data.get("file_images", {})
+        if path in images and images[path]:
+            return images[path]
+        ext = Path(path).suffix.lower()
+        if ext in images and images[ext]:
+            return images[ext]
+        return ""
+
+    def icon_for_path(self, path):
+        size = max(18, int(self.left_size_var.get()))
+        key = (path, size)
+        if key in self.file_icon_cache:
+            return self.file_icon_cache[key]
+
+        img_path = self.map_image_for_path(path)
+        if img_path and os.path.exists(img_path):
+            try:
+                icon = Image.open(img_path).convert("RGBA").resize((size, size), Image.Resampling.LANCZOS)
+            except Exception:
+                icon = None
+        else:
+            icon = None
+
+        if icon is None:
+            icon = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+            d = ImageDraw.Draw(icon)
+            if os.path.isdir(path):
+                color = "#6ce8ff"
+                d.rounded_rectangle((1, size * 0.22, size - 2, size - 2), radius=4, fill=color)
+                d.rectangle((2, 2, size * 0.6, size * 0.35), fill=color)
+            else:
+                color = "#ff8a3d"
+                d.rounded_rectangle((2, 2, size - 2, size - 2), radius=4, fill=color)
+
+        tk_img = ImageTk.PhotoImage(icon)
+        self.file_icon_cache[key] = tk_img
+        self.file_icon_refs.append(tk_img)
+        return tk_img
+
+    def populate_file_view(self):
+        for row in self.file_view.get_children():
+            self.file_view.delete(row)
+
+        current = self.current_dir_var.get().strip()
+        if not current or not os.path.isdir(current):
+            return
+
+        mode = self.left_view_var.get()
+        if mode == "Details":
+            self.file_view.configure(show="tree headings")
+            self.file_view.column("#0", width=250)
+            self.file_view.column("size", width=90, stretch=True)
+            self.file_view.column("type", width=90, stretch=True)
+            self.file_view.column("modified", width=150, stretch=True)
+        else:
+            self.file_view.configure(show="tree")
+            self.file_view.column("#0", width=360)
+            self.file_view.column("size", width=0, stretch=False)
+            self.file_view.column("type", width=0, stretch=False)
+            self.file_view.column("modified", width=0, stretch=False)
+
+        row_h = max(22, int(self.left_size_var.get()) + (12 if mode == "Icons" else 2))
+        self.style.configure("Treeview", rowheight=row_h)
+
+        try:
+            names = sorted(os.listdir(current), key=lambda s: s.lower())
+        except (PermissionError, FileNotFoundError):
+            return
+
+        for name in names:
+            full = os.path.join(current, name)
+            is_dir = os.path.isdir(full)
+            size = "" if is_dir else self._format_size(os.path.getsize(full))
+            typ = "Folder" if is_dir else (Path(full).suffix.lower().lstrip(".") or "file")
+            try:
+                modified = datetime.fromtimestamp(os.path.getmtime(full)).strftime("%Y-%m-%d %H:%M")
+            except OSError:
+                modified = ""
+            icon = self.icon_for_path(full)
+            text = name if mode != "Icons" else f"   {name}"
+            self.file_view.insert("", "end", text=text, image=icon, values=(size, typ, modified, full))
+
+        self.write_explorer_settings()
+
+    def on_file_view_select(self, _event):
+        sel = self.file_view.selection()
+        if not sel:
+            return
+        path = self.file_view.set(sel[0], "fullpath")
+        if path:
+            self.preview_file(path)
+
+    def on_file_view_double_click(self, _event):
+        sel = self.file_view.selection()
+        if not sel:
+            return
+        path = self.file_view.set(sel[0], "fullpath")
+        if not path:
+            return
+        if os.path.isdir(path):
+            self.set_current_dir(path)
+        else:
+            self.preview_file(path)
+
+    def preview_file(self, path):
+        self.preview_title.configure(text=path)
+        self.preview_text.delete("1.0", "end")
+        self.preview_image_ref = None
+
+        if os.path.isdir(path):
+            try:
+                count = len(os.listdir(path))
+            except Exception:
+                count = 0
+            self.preview_text.insert("end", f"Folder\nItems: {count}\n\nDouble-click folders to open them in-app.")
+            return
+
+        ext = Path(path).suffix.lower()
+        if ext in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}:
+            try:
+                img = Image.open(path).convert("RGBA")
+                img.thumbnail((240, 240), Image.Resampling.LANCZOS)
+                self.preview_image_ref = ImageTk.PhotoImage(img)
+                self.preview_text.image_create("end", image=self.preview_image_ref)
+                self.preview_text.insert("end", "\n\nImage preview in-app.")
+                return
+            except Exception:
+                pass
+
+        if ext in {".txt", ".md", ".json", ".py", ".ini", ".log", ".csv", ".js", ".html", ".css"}:
+            try:
+                with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                    self.preview_text.insert("end", f.read(6000))
+                return
+            except Exception:
+                pass
+
+        self.preview_text.insert("end", "Unsupported preview type (binary / media).")
+
+    def _format_size(self, size):
+        units = ["B", "KB", "MB", "GB", "TB"]
+        value = float(size)
+        idx = 0
+        while value >= 1024 and idx < len(units) - 1:
+            value /= 1024
+            idx += 1
+        return f"{value:.1f} {units[idx]}"
+
+    # ----------------- sections (right side) -----------------
     def refresh(self):
         self.apply_theme()
         self.populate_roots()
+        self.populate_file_view()
         self.render_sections()
 
     def add_section(self):
         self.section_editor_window()
 
     def edit_section(self, index):
-        self.section_editor_window(index=index)
+        self.section_editor_window(index)
 
     def section_editor_window(self, index=None):
         editing = index is not None
         source = self.config_data["sections"][index] if editing else {
             "name": "",
+            "type": "shortcut",
             "path": "",
             "image": "",
             "shape": "rounded",
@@ -378,64 +618,69 @@ class LauncherExplorerApp:
 
         win = tk.Toplevel(self.root)
         win.title("Edit Section" if editing else "Create Section")
-        win.geometry("720x520")
+        win.geometry("760x560")
         win.transient(self.root)
 
         shell = tk.Frame(win)
         shell.pack(fill="both", expand=True, padx=14, pady=14)
-
         left = tk.Frame(shell)
         left.pack(side="left", fill="both", expand=True)
-
         right = tk.LabelFrame(shell, text="Live Preview")
         right.pack(side="right", fill="both", padx=(14, 0))
 
-        def row(parent, label_text, initial, browse=None):
-            r = tk.Frame(parent)
-            r.pack(fill="x", pady=5)
-            tk.Label(r, text=label_text, width=14, anchor="w").pack(side="left")
+        def make_row(parent, label_text, initial, browse=None):
+            row = tk.Frame(parent)
+            row.pack(fill="x", pady=5)
+            tk.Label(row, text=label_text, width=14, anchor="w").pack(side="left")
             var = tk.StringVar(value=initial)
-            ttk.Entry(r, textvariable=var).pack(side="left", fill="x", expand=True, padx=(0, 6))
+            ttk.Entry(row, textvariable=var).pack(side="left", fill="x", expand=True, padx=(0, 6))
             if browse:
-                ttk.Button(r, text="Browse", command=lambda: browse(var)).pack(side="left")
+                ttk.Button(row, text="Browse", command=lambda: browse(var)).pack(side="left")
             return var
 
-        name_var = row(left, "Name", source.get("name", ""))
-        path_var = row(left, "Target", source.get("path", ""), browse=self._pick_target)
-        image_var = row(left, "Image", source.get("image", ""), browse=self._pick_image)
+        name_var = make_row(left, "Name", source.get("name", ""))
 
-        shape_row = tk.Frame(left)
-        shape_row.pack(fill="x", pady=5)
-        tk.Label(shape_row, text="Shape", width=14, anchor="w").pack(side="left")
+        trow = tk.Frame(left)
+        trow.pack(fill="x", pady=5)
+        tk.Label(trow, text="Section type", width=14, anchor="w").pack(side="left")
+        type_var = tk.StringVar(value=source.get("type", "shortcut"))
+        ttk.Combobox(trow, textvariable=type_var, values=["shortcut", "collection"], state="readonly").pack(side="left", fill="x", expand=True)
+
+        path_var = make_row(left, "Target", source.get("path", ""), browse=self._pick_target)
+        image_var = make_row(left, "Image", source.get("image", ""), browse=self._pick_image)
+
+        srow = tk.Frame(left)
+        srow.pack(fill="x", pady=5)
+        tk.Label(srow, text="Shape", width=14, anchor="w").pack(side="left")
         shape_var = tk.StringVar(value=source.get("shape", "rounded"))
-        ttk.Combobox(shape_row, textvariable=shape_var, values=["rounded", "rectangle", "circle", "hexagon"], state="readonly").pack(side="left", fill="x", expand=True)
+        ttk.Combobox(srow, textvariable=shape_var, values=["rounded", "rectangle", "circle", "hexagon"], state="readonly").pack(side="left", fill="x", expand=True)
 
-        mode_row = tk.Frame(left)
-        mode_row.pack(fill="x", pady=5)
-        tk.Label(mode_row, text="Image mode", width=14, anchor="w").pack(side="left")
+        mrow = tk.Frame(left)
+        mrow.pack(fill="x", pady=5)
+        tk.Label(mrow, text="Image mode", width=14, anchor="w").pack(side="left")
         mode_var = tk.StringVar(value=source.get("image_mode", "contain"))
-        ttk.Combobox(mode_row, textvariable=mode_var, values=["contain", "cover", "original", "stretch"], state="readonly").pack(side="left", fill="x", expand=True)
+        ttk.Combobox(mrow, textvariable=mode_var, values=["contain", "cover", "original", "stretch"], state="readonly").pack(side="left", fill="x", expand=True)
 
-        sx_row = tk.Frame(left)
-        sx_row.pack(fill="x", pady=4)
-        tk.Label(sx_row, text="Scale X", width=14, anchor="w").pack(side="left")
         sx_var = tk.IntVar(value=int(source.get("scale_x", 100)))
-        tk.Scale(sx_row, from_=25, to=240, variable=sx_var, orient="horizontal", showvalue=True, resolution=1, length=320).pack(side="left", fill="x", expand=True)
-
-        sy_row = tk.Frame(left)
-        sy_row.pack(fill="x", pady=4)
-        tk.Label(sy_row, text="Scale Y", width=14, anchor="w").pack(side="left")
         sy_var = tk.IntVar(value=int(source.get("scale_y", 100)))
-        tk.Scale(sy_row, from_=25, to=240, variable=sy_var, orient="horizontal", showvalue=True, resolution=1, length=320).pack(side="left", fill="x", expand=True)
 
-        tip = tk.Label(left, text="Use 'original' + 100% to keep native image size (no forced compression).", font=("Segoe UI", 9))
-        tip.pack(fill="x", pady=(8, 0))
+        sx = tk.Frame(left)
+        sx.pack(fill="x", pady=4)
+        tk.Label(sx, text="Scale X", width=14, anchor="w").pack(side="left")
+        tk.Scale(sx, from_=25, to=240, orient="horizontal", variable=sx_var, length=320).pack(side="left", fill="x", expand=True)
+
+        sy = tk.Frame(left)
+        sy.pack(fill="x", pady=4)
+        tk.Label(sy, text="Scale Y", width=14, anchor="w").pack(side="left")
+        tk.Scale(sy, from_=25, to=240, orient="horizontal", variable=sy_var, length=320).pack(side="left", fill="x", expand=True)
+
+        tk.Label(left, text="collection type opens folder in this app; shortcut launches file/app.", font=("Segoe UI", 9)).pack(fill="x", pady=(8, 0))
 
         preview_canvas = tk.Canvas(right, width=340, height=180, highlightthickness=0)
         preview_canvas.pack(padx=10, pady=10)
-        preview_photo = {"img": None}
+        preview_ref = {"img": None}
 
-        def render_preview(*_args):
+        def rerender_preview(*_args):
             section_preview = {
                 "image": image_var.get().strip(),
                 "shape": shape_var.get().strip(),
@@ -446,20 +691,21 @@ class LauncherExplorerApp:
             img = self.build_preview(section_preview, size=(320, 160))
             preview_canvas.delete("all")
             if img:
-                preview_photo["img"] = img
+                preview_ref["img"] = img
                 preview_canvas.create_image(10, 10, anchor="nw", image=img)
             else:
-                preview_canvas.create_text(170, 90, text="Preview appears here", fill=self.theme.get("text", "white"), font=("Segoe UI", 12))
+                preview_canvas.create_text(170, 90, text="Preview", fill=self.theme.get("text", "white"))
 
         for v in (image_var, shape_var, mode_var):
-            v.trace_add("write", render_preview)
-        sx_var.trace_add("write", render_preview)
-        sy_var.trace_add("write", render_preview)
-        render_preview()
+            v.trace_add("write", rerender_preview)
+        sx_var.trace_add("write", rerender_preview)
+        sy_var.trace_add("write", rerender_preview)
+        rerender_preview()
 
         def save():
             payload = {
                 "name": name_var.get().strip() or "Unnamed",
+                "type": type_var.get().strip() or "shortcut",
                 "path": path_var.get().strip(),
                 "image": image_var.get().strip(),
                 "shape": shape_var.get().strip(),
@@ -468,7 +714,7 @@ class LauncherExplorerApp:
                 "scale_y": int(sy_var.get()),
             }
             if not payload["path"]:
-                messagebox.showwarning(APP_NAME, "Please choose a file or folder target.")
+                messagebox.showwarning(APP_NAME, "Please choose a target file/folder.")
                 return
             if editing:
                 self.config_data["sections"][index] = payload
@@ -483,18 +729,18 @@ class LauncherExplorerApp:
         ttk.Button(footer, text="Save", command=save).pack(side="right")
 
     def _pick_target(self, var):
-        file_choice = filedialog.askopenfilename(title="Choose target file/executable")
-        if file_choice:
-            var.set(file_choice)
+        f = filedialog.askopenfilename(title="Choose target file/executable")
+        if f:
+            var.set(f)
             return
-        folder_choice = filedialog.askdirectory(title="Choose target folder")
-        if folder_choice:
-            var.set(folder_choice)
+        d = filedialog.askdirectory(title="Choose target folder")
+        if d:
+            var.set(d)
 
     def _pick_image(self, var):
-        selected = filedialog.askopenfilename(title="Choose image", filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.gif")])
-        if selected:
-            var.set(selected)
+        p = filedialog.askopenfilename(title="Choose image", filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.gif")])
+        if p:
+            var.set(p)
 
     def delete_section(self, index):
         del self.config_data["sections"][index]
@@ -511,7 +757,7 @@ class LauncherExplorerApp:
             key = simpledialog.askstring(APP_NAME, "Extension (example: .exe)")
             if not key:
                 return
-            key = key.strip()
+            key = key.strip().lower()
         elif map_type == "file":
             key = filedialog.askopenfilename(title="Pick file to map image")
             if not key:
@@ -524,52 +770,63 @@ class LauncherExplorerApp:
         if not image:
             return
 
-        self.config_data["file_images"][key] = image
+        self.config_data.setdefault("file_images", {})[key] = image
+        self.file_icon_cache.clear()
         self.save_config()
-        messagebox.showinfo(APP_NAME, "File image mapping saved.")
+        self.populate_file_view()
+        messagebox.showinfo(APP_NAME, "Mapping saved.")
 
     def open_theme_studio(self):
         win = tk.Toplevel(self.root)
         win.title("Theme Studio")
-        win.geometry("760x560")
+        win.geometry("820x620")
         win.transient(self.root)
 
         themes = self.config_data["themes"]
-        theme_names = sorted(themes.keys())
-        active = tk.StringVar(value=self.config_data.get("theme", theme_names[0]))
+        active = tk.StringVar(value=self.config_data.get("theme", "arc-neon"))
+
+        top = tk.Frame(win)
+        top.pack(fill="x", padx=12, pady=12)
+        tk.Label(top, text="Theme", width=11, anchor="w").pack(side="left")
+        picker = ttk.Combobox(top, textvariable=active, values=sorted(themes.keys()), state="readonly")
+        picker.pack(side="left", fill="x", expand=True)
+
+        status = tk.Label(top, text=f"Current: {self.config_data.get('theme', '')}")
+        status.pack(side="right")
 
         def apply_selected_theme():
             self.config_data["theme"] = active.get()
             self.save_config()
             self.refresh()
-            try:
-                theme_status.configure(text=f"Current: {active.get()}")
-            except NameError:
-                pass
+            status.configure(text=f"Current: {active.get()}")
 
-        top = tk.Frame(win)
-        top.pack(fill="x", padx=12, pady=12)
-        tk.Label(top, text="Theme", width=11, anchor="w").pack(side="left")
-        picker = ttk.Combobox(top, textvariable=active, values=theme_names, state="readonly")
-        picker.pack(side="left", fill="x", expand=True)
+        ttk.Button(top, text="Apply", command=apply_selected_theme).pack(side="right", padx=(0, 6))
 
-        def add_theme():
-            name = simpledialog.askstring(APP_NAME, "New theme name:", parent=win)
-            if not name:
+        # Preset themes
+        preset_row = tk.Frame(win)
+        preset_row.pack(fill="x", padx=12, pady=(0, 8))
+        tk.Label(preset_row, text="Preset theme", width=11, anchor="w").pack(side="left")
+        preset_var = tk.StringVar(value=next(iter(self.config_data.get("preset_themes", {"Starter Neon": {}}).keys())))
+        preset_combo = ttk.Combobox(preset_row, textvariable=preset_var, values=sorted(self.config_data.get("preset_themes", {}).keys()), state="readonly")
+        preset_combo.pack(side="left", fill="x", expand=True)
+
+        def apply_preset():
+            preset = self.config_data.get("preset_themes", {}).get(preset_var.get())
+            if not preset:
                 return
-            if name in themes:
-                messagebox.showinfo(APP_NAME, "Theme already exists.")
-                return
-            themes[name] = json.loads(json.dumps(DEFAULT_CONFIG["themes"]["arc-neon"]))
-            picker.configure(values=sorted(themes.keys()))
-            active.set(name)
-            load_theme_values()
+            tname = preset.get("theme_name", "arc-neon")
+            self.config_data["themes"][tname] = {**DEFAULT_CONFIG["themes"]["arc-neon"], **preset.get("theme", {})}
+            self.config_data["theme"] = tname
+            self.config_data["sections"] = json.loads(json.dumps(preset.get("sections", [])))
+            self.config_data["file_images"] = json.loads(json.dumps(preset.get("file_images", {})))
+            self.file_icon_cache.clear()
+            self.save_config()
+            self.refresh()
+            active.set(tname)
+            status.configure(text=f"Current: {tname}")
+            messagebox.showinfo(APP_NAME, f"Applied preset: {preset_var.get()}")
 
-        ttk.Button(top, text="New", command=add_theme).pack(side="left", padx=6)
-        ttk.Button(top, text="Apply", command=apply_selected_theme).pack(side="left", padx=(0, 6))
-
-        theme_status = tk.Label(top, text=f"Current: {self.config_data.get('theme', '')}", font=("Segoe UI", 9))
-        theme_status.pack(side="right")
+        ttk.Button(preset_row, text="Apply Preset", command=apply_preset).pack(side="left", padx=6)
 
         editor = tk.Frame(win)
         editor.pack(fill="both", expand=True, padx=12)
@@ -593,56 +850,22 @@ class LauncherExplorerApp:
             ttk.Button(r, text="🎨", width=3, command=pick).pack(side="left")
             fields[key] = (var, preview)
 
-        color_row("Background", "bg")
-        color_row("Panel", "panel")
-        color_row("Card", "card")
-        color_row("Text", "text")
-        color_row("Accent", "accent")
-        color_row("Secondary", "secondary")
+        for k in ["bg", "panel", "card", "text", "accent", "secondary"]:
+            color_row(k.capitalize(), k)
 
-        bgf = tk.Frame(editor)
-        bgf.pack(fill="x", pady=(10, 4))
-        tk.Label(bgf, text="Background image", width=14, anchor="w").pack(side="left")
+        bg_row = tk.Frame(editor)
+        bg_row.pack(fill="x", pady=(10, 4))
+        tk.Label(bg_row, text="Background image", width=14, anchor="w").pack(side="left")
         bg_var = tk.StringVar()
-        ttk.Entry(bgf, textvariable=bg_var).pack(side="left", fill="x", expand=True, padx=(0, 6))
-        ttk.Button(bgf, text="Browse", command=lambda: self._pick_image(bg_var)).pack(side="left")
-
-        sticker_block = tk.LabelFrame(editor, text="Stickers / small GIFs")
-        sticker_block.pack(fill="both", expand=True, pady=(10, 6))
-        sticker_list = tk.Listbox(sticker_block)
-        sticker_list.pack(fill="both", expand=True, padx=8, pady=8)
-
-        controls = tk.Frame(sticker_block)
-        controls.pack(fill="x", padx=8, pady=(0, 8))
-
-        def add_sticker():
-            path = filedialog.askopenfilename(title="Choose sticker image/GIF", filetypes=[("Images", "*.png *.jpg *.jpeg *.webp *.gif")])
-            if not path:
-                return
-            stickers = themes[active.get()].setdefault("stickers", [])
-            stickers.append({"path": path, "x": 20 + len(stickers) * 24, "y": 20 + len(stickers) * 24, "size": 96})
-            load_theme_values()
-
-        def remove_sticker():
-            sel = sticker_list.curselection()
-            if not sel:
-                return
-            del themes[active.get()].setdefault("stickers", [])[sel[0]]
-            load_theme_values()
-
-        ttk.Button(controls, text="Add Sticker/GIF", command=add_sticker).pack(side="left")
-        ttk.Button(controls, text="Remove", command=remove_sticker).pack(side="left", padx=6)
+        ttk.Entry(bg_row, textvariable=bg_var).pack(side="left", fill="x", expand=True, padx=(0, 6))
+        ttk.Button(bg_row, text="Browse", command=lambda: self._pick_image(bg_var)).pack(side="left")
 
         def load_theme_values(*_args):
-            data = themes[active.get()]
-            for key in ("bg", "panel", "card", "text", "accent", "secondary"):
-                fields[key][0].set(data.get(key, ""))
-                fields[key][1].configure(bg=data.get(key, "#ffffff"))
+            data = themes.get(active.get(), DEFAULT_CONFIG["themes"]["arc-neon"])
+            for k in ["bg", "panel", "card", "text", "accent", "secondary"]:
+                fields[k][0].set(data.get(k, ""))
+                fields[k][1].configure(bg=data.get(k, "#ffffff"))
             bg_var.set(data.get("background_image", ""))
-
-            sticker_list.delete(0, "end")
-            for s in data.get("stickers", []):
-                sticker_list.insert("end", f"{Path(s['path']).name} (x={s.get('x', 0)}, y={s.get('y', 0)}, size={s.get('size', 96)})")
 
         picker.bind("<<ComboboxSelected>>", load_theme_values)
         load_theme_values()
@@ -651,19 +874,43 @@ class LauncherExplorerApp:
         bottom.pack(fill="x", padx=12, pady=(0, 12))
 
         def save_theme():
-            current = themes[active.get()]
-            for key in ("bg", "panel", "card", "text", "accent", "secondary"):
-                current[key] = fields[key][0].get().strip() or DEFAULT_CONFIG["themes"]["arc-neon"][key]
-            current["background_image"] = bg_var.get().strip()
-            current.setdefault("stickers", [])
+            data = themes.setdefault(active.get(), json.loads(json.dumps(DEFAULT_CONFIG["themes"]["arc-neon"])))
+            for k in ["bg", "panel", "card", "text", "accent", "secondary"]:
+                data[k] = fields[k][0].get().strip() or DEFAULT_CONFIG["themes"]["arc-neon"][k]
+            data["background_image"] = bg_var.get().strip()
+            data.setdefault("stickers", [])
             self.config_data["theme"] = active.get()
             self.save_config()
             self.refresh()
-            theme_status.configure(text=f"Current: {active.get()}")
+            status.configure(text=f"Current: {active.get()}")
             messagebox.showinfo(APP_NAME, "Theme saved and applied.")
 
         ttk.Button(bottom, text="Save Theme", command=save_theme).pack(side="right")
-        ttk.Button(bottom, text="Apply Selected", command=apply_selected_theme).pack(side="right", padx=(0, 8))
+
+    def open_external(self, path):
+        if not path:
+            return
+        try:
+            if os.name == "nt":
+                os.startfile(path)
+            else:
+                subprocess.Popen(["xdg-open", path])
+        except Exception as exc:
+            messagebox.showerror(APP_NAME, f"Could not open:\n{exc}")
+
+    def open_section(self, section):
+        section_type = section.get("type", "shortcut")
+        target = section.get("path", "")
+        if section_type == "collection":
+            if os.path.isdir(target):
+                self.left_layout_var.set("Tree + Files")
+                self.apply_left_layout()
+                self.set_current_dir(target)
+                self.main.sash_place(0, 520, 0)
+            else:
+                messagebox.showwarning(APP_NAME, "Collection sections must point to a folder.")
+        else:
+            self.open_external(target)
 
     def render_sections(self):
         for child in self.cards_container.winfo_children():
@@ -671,16 +918,14 @@ class LauncherExplorerApp:
         self.section_images.clear()
 
         zoom = max(70, min(170, int(self.zoom_var.get()))) / 100
-        card_w = int(320 * zoom)
-        card_h = int(260 * zoom)
-        img_w = int(286 * zoom)
-        img_h = int(142 * zoom)
-        name_font = max(10, int(13 * zoom))
-        path_font = max(8, int(8 * zoom))
+        card_w = int(340 * zoom)
+        card_h = int(278 * zoom)
+        img_w = int(304 * zoom)
+        img_h = int(152 * zoom)
 
-        sorted_sections = self.get_sorted_sections()
+        sections = self.get_sorted_sections()
         cols = 4 if zoom <= 1 else 3
-        for display_idx, (idx, section) in enumerate(sorted_sections):
+        for display_idx, (idx, section) in enumerate(sections):
             row, col = divmod(display_idx, cols)
             card = tk.Frame(self.cards_container, width=card_w, height=card_h, bd=0, relief="flat")
             card.grid(row=row, column=col, padx=12, pady=12, sticky="nsew")
@@ -688,20 +933,21 @@ class LauncherExplorerApp:
 
             img = self.build_preview(section, size=(img_w, img_h))
             if img:
-                image_label = tk.Label(card, image=img)
-                image_label.image = img
+                lbl = tk.Label(card, image=img)
+                lbl.image = img
                 self.section_images.append(img)
             else:
-                image_label = tk.Label(card, text="No image", font=("Segoe UI", max(9, int(10 * zoom))))
-            image_label.pack(pady=(12, 8))
+                lbl = tk.Label(card, text="No image", font=("Segoe UI", max(9, int(10 * zoom))))
+            lbl.pack(pady=(12, 8))
 
-            tk.Label(card, text=section.get("name", "Unnamed"), font=("Segoe UI Semibold", name_font)).pack()
-            tk.Label(card, text=section.get("path", ""), font=("Segoe UI", path_font), wraplength=img_w).pack(pady=(2, 8))
+            tk.Label(card, text=section.get("name", "Unnamed"), font=("Segoe UI Semibold", max(10, int(13 * zoom)))).pack()
+            tk.Label(card, text=f"[{section.get('type', 'shortcut')}]", font=("Segoe UI", 9)).pack()
+            tk.Label(card, text=section.get("path", ""), font=("Segoe UI", max(8, int(8 * zoom))), wraplength=img_w).pack(pady=(2, 8))
 
-            row_btns = tk.Frame(card)
-            row_btns.pack(pady=4)
-            ttk.Button(row_btns, text="Open", command=lambda p=section.get("path", ""): self.open_path(p)).pack(side="left", padx=4)
-            ttk.Button(row_btns, text="Edit", command=lambda i=idx: self.edit_section(i)).pack(side="left", padx=4)
+            row_btn = tk.Frame(card)
+            row_btn.pack(pady=4)
+            ttk.Button(row_btn, text="Open", command=lambda s=section: self.open_section(s)).pack(side="left", padx=4)
+            ttk.Button(row_btn, text="Edit", command=lambda i=idx: self.edit_section(i)).pack(side="left", padx=4)
 
             card.bind("<Button-3>", lambda e, i=idx: self.section_context_menu(e, i))
             for child in card.winfo_children():
@@ -709,19 +955,9 @@ class LauncherExplorerApp:
 
             self._paint_card(card)
 
-    def _section_file_stats(self, path):
-        if not path or not os.path.exists(path):
-            return 0, 0
-        try:
-            stat = os.stat(path)
-            return int(stat.st_size), float(stat.st_mtime)
-        except OSError:
-            return 0, 0
-
     def get_sorted_sections(self):
         sections = list(enumerate(self.config_data.get("sections", [])))
         mode = self.sort_var.get().strip().lower()
-
         if mode == "alphabetical (z-a)":
             sections.sort(key=lambda x: x[1].get("name", "").lower(), reverse=True)
         elif mode == "size (largest)":
@@ -734,8 +970,16 @@ class LauncherExplorerApp:
             sections.sort(key=lambda x: self._section_file_stats(x[1].get("path", ""))[1])
         else:
             sections.sort(key=lambda x: x[1].get("name", "").lower())
-
         return sections
+
+    def _section_file_stats(self, path):
+        if not path or not os.path.exists(path):
+            return 0, 0
+        try:
+            stat = os.stat(path)
+            return int(stat.st_size), float(stat.st_mtime)
+        except OSError:
+            return 0, 0
 
     def _paint_card(self, card):
         t = self.theme
@@ -761,7 +1005,7 @@ class LauncherExplorerApp:
         self.save_config()
         self.render_sections()
 
-    def build_preview(self, section, size=(286, 142)):
+    def build_preview(self, section, size=(304, 152)):
         image_path = section.get("image", "")
         if not image_path or not os.path.exists(image_path):
             return None
@@ -772,47 +1016,33 @@ class LauncherExplorerApp:
         mode = section.get("image_mode", "contain")
         sx = max(25, int(section.get("scale_x", 100))) / 100.0
         sy = max(25, int(section.get("scale_y", 100))) / 100.0
-        target_w, target_h = size
+        tw, th = size
 
         if mode == "stretch":
-            new_w = max(1, int(target_w * sx))
-            new_h = max(1, int(target_h * sy))
+            nw, nh = max(1, int(tw * sx)), max(1, int(th * sy))
         elif mode == "original":
-            new_w = max(1, int(base.width * sx))
-            new_h = max(1, int(base.height * sy))
+            nw, nh = max(1, int(base.width * sx)), max(1, int(base.height * sy))
         else:
-            fit_ratio = min(target_w / base.width, target_h / base.height) if mode == "contain" else max(target_w / base.width, target_h / base.height)
-            avg_scale = (sx + sy) / 2.0
-            ratio = fit_ratio * avg_scale
-            new_w = max(1, int(base.width * ratio))
-            new_h = max(1, int(base.height * ratio))
+            fit = min(tw / base.width, th / base.height) if mode == "contain" else max(tw / base.width, th / base.height)
+            ratio = fit * ((sx + sy) / 2.0)
+            nw, nh = max(1, int(base.width * ratio)), max(1, int(base.height * ratio))
 
-        scaled = base.resize((new_w, new_h), Image.Resampling.LANCZOS)
-
+        scaled = base.resize((nw, nh), Image.Resampling.LANCZOS)
         canvas = Image.new("RGBA", size, (0, 0, 0, 0))
-        x = (target_w - new_w) // 2
-        y = (target_h - new_h) // 2
-        canvas.alpha_composite(scaled, dest=(x, y))
+        canvas.alpha_composite(scaled, dest=((tw - nw) // 2, (th - nh) // 2))
 
         mask = Image.new("L", size, 0)
         draw = ImageDraw.Draw(mask)
         shape = section.get("shape", "rounded")
         if shape == "circle":
-            draw.ellipse((0, 0, target_w, target_h), fill=255)
+            draw.ellipse((0, 0, tw, th), fill=255)
         elif shape == "hexagon":
-            pts = [
-                (target_w * 0.2, 0),
-                (target_w * 0.8, 0),
-                (target_w, target_h * 0.5),
-                (target_w * 0.8, target_h),
-                (target_w * 0.2, target_h),
-                (0, target_h * 0.5),
-            ]
+            pts = [(tw * 0.2, 0), (tw * 0.8, 0), (tw, th * 0.5), (tw * 0.8, th), (tw * 0.2, th), (0, th * 0.5)]
             draw.polygon(pts, fill=255)
         elif shape == "rectangle":
-            draw.rectangle((0, 0, target_w, target_h), fill=255)
+            draw.rectangle((0, 0, tw, th), fill=255)
         else:
-            draw.rounded_rectangle((0, 0, target_w, target_h), radius=28, fill=255)
+            draw.rounded_rectangle((0, 0, tw, th), radius=28, fill=255)
 
         canvas.putalpha(mask)
         return ImageTk.PhotoImage(canvas)
