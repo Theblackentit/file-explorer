@@ -11,7 +11,7 @@ A modern desktop launcher + file explorer app built with Python/Tkinter.
   - color wheel pickers (`🎨`) + hex,
   - custom background image that now applies visibly to the launcher area,
   - stickers and small GIF support,
-  - **Apply Selected** button to instantly switch themes.
+  - **Apply** button at the top (and **Apply Selected** at bottom) to instantly switch themes.
 - Section image controls in Edit mode:
   - **Image mode**: `contain`, `cover`, `original`, `stretch`
   - **Scale X / Scale Y** sliders to stretch or shrink manually

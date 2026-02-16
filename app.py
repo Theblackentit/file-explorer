@@ -530,6 +530,15 @@ class LauncherExplorerApp:
         theme_names = sorted(themes.keys())
         active = tk.StringVar(value=self.config_data.get("theme", theme_names[0]))
 
+        def apply_selected_theme():
+            self.config_data["theme"] = active.get()
+            self.save_config()
+            self.refresh()
+            try:
+                theme_status.configure(text=f"Current: {active.get()}")
+            except NameError:
+                pass
+
         top = tk.Frame(win)
         top.pack(fill="x", padx=12, pady=12)
         tk.Label(top, text="Theme", width=11, anchor="w").pack(side="left")
@@ -549,6 +558,7 @@ class LauncherExplorerApp:
             load_theme_values()
 
         ttk.Button(top, text="New", command=add_theme).pack(side="left", padx=6)
+        ttk.Button(top, text="Apply", command=apply_selected_theme).pack(side="left", padx=(0, 6))
 
         theme_status = tk.Label(top, text=f"Current: {self.config_data.get('theme', '')}", font=("Segoe UI", 9))
         theme_status.pack(side="right")
@@ -631,12 +641,6 @@ class LauncherExplorerApp:
 
         bottom = tk.Frame(win)
         bottom.pack(fill="x", padx=12, pady=(0, 12))
-
-        def apply_selected_theme():
-            self.config_data["theme"] = active.get()
-            self.save_config()
-            self.refresh()
-            theme_status.configure(text=f"Current: {active.get()}")
 
         def save_theme():
             current = themes[active.get()]
