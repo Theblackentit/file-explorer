@@ -1,49 +1,49 @@
-# Launcher File Explorer
+# Launcher Explorer X (C# WinForms)
 
-A modern Xbox-inspired launcher + file explorer desktop app (Python/Tkinter).
+This project has been switched from Python to a native **C#/.NET Windows desktop app** so it can be packaged as a clickable `.exe` with a more modern UI baseline.
 
-## Revamped experience
+## What this version includes
 
-- **Home + Library flow**:
-  - `Home` = Xbox-style content area with rows/sections
-  - `Library` = in-app file explorer
-- **Home content model**:
-  - cards can be `poster` (square-ish) or `banner` (wide)
-  - each card can be:
-    - `shortcut` (open app/file/video)
-    - `collection` (open a folder inside app explorer)
-  - cards belong to named rows/sections (ex: `Recently Added`, `Game Deals`)
-- **Sidebar**:
-  - shortcut list (from items placed as `shortcut`)
-  - drive list (`C:\`, `D:\`, etc.) that opens library explorer
-- **Explorer layouts (macOS/Finder-like options)**:
-  - `List`, `Tiles`, `Icons`
-  - `Icons` is a true responsive 2D grid (rows + columns)
-- **File operations**:
-  - right-click for Open, Preview, Rename, Compress ZIP, Delete, Properties
-  - set/remove custom icon image per file via right-click
-  - double-click opens files with system default app
-- **Preview support**:
-  - images, text/code files, and video thumbnails (with OpenCV)
-- **Themes**:
-  - normal themes (colors/background)
-  - preset themes (theme + preloaded rows/cards/icon mappings)
-  - gradient rendering for premium visual polish
-
-## Run locally
-
-```bash
-python app.py
-```
+- **Xbox-style Home + Library split**
+  - `Home`: grouped content rows with **posters** and **banners**
+  - `Library`: in-app file explorer (does not open external explorer for navigation)
+- **Sidebar shortcuts + drives**
+  - Shortcuts come from your configured poster/banner items
+  - Double-clicking a drive opens that path in Library view
+- **Explorer view modes**
+  - List, Tiles, and Icons layouts
+  - Scale slider to increase/decrease icon size
+- **File operations in right-click menu**
+  - Open, Rename, Compress to `.zip`, Delete, Properties
+  - Change custom icon image per file/folder
+- **Theme Studio**
+  - Edit theme name and color values
+- **Auto-save**
+  - Saves sections, shortcuts, theme, and file icon mappings to `launcher_config.json` on close
 
 ## Build executable (Windows)
 
-1. Double-click `build_executable.bat`
-2. Open `dist\LauncherExplorer\LauncherExplorer.exe`
+1. Install **.NET 8 SDK** from Microsoft.
+2. Open terminal in this repo.
+3. Run:
 
-## Requirements
+```bat
+build_executable.bat
+```
 
-- Python 3.10+
-- `Pillow`
-- `pyinstaller`
-- `opencv-python` (for video thumbnails)
+Output executable:
+
+```text
+.\dist\LauncherExplorerX\LauncherExplorer.exe
+```
+
+## Run from source (Windows)
+
+```bat
+dotnet run
+```
+
+## Notes
+
+- This is now a Windows-native .NET desktop app (no Python runtime required).
+- Configuration is stored beside the executable in `launcher_config.json`.
