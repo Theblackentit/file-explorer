@@ -1,31 +1,27 @@
 # Launcher Explorer X (C# WinForms)
 
-This project has been switched from Python to a native **C#/.NET Windows desktop app** so it can be packaged as a clickable `.exe` with a more modern UI baseline.
+Launcher Explorer X is a native Windows desktop app (C#/.NET) that keeps the custom launcher mechanics from the Python version while running as a modern executable.
 
-## What this version includes
+## Highlights
 
-- **Xbox-style Home + Library split**
-  - `Home`: grouped content rows with **posters** and **banners**
-  - `Library`: in-app file explorer (does not open external explorer for navigation)
-- **Sidebar shortcuts + drives**
-  - Shortcuts come from your configured poster/banner items
-  - Double-clicking a drive opens that path in Library view
-- **Explorer view modes**
-  - List, Tiles, and Icons layouts
-  - Scale slider to increase/decrease icon size
-- **File operations in right-click menu**
-  - Open, Rename, Compress to `.zip`, Delete, Properties
-  - Change custom icon image per file/folder
-- **Theme Studio**
-  - Edit theme name and color values
-- **Auto-save**
-  - Saves sections, shortcuts, theme, and file icon mappings to `launcher_config.json` on close
+- Xbox-style **Home** and **Library** tabs
+- Home supports grouped **posters** and **banners**
+- Sidebar contains **Shortcuts** and mounted **Drives**
+- In-app file explorer with **List / Tiles / Icons** layouts + scale slider
+- Right-click file actions: open, rename, zip, delete, properties, custom icon mapping
+- Theme Studio with editable colors and color picker buttons
+- Auto-save to `launcher_config.json` on close
+
+## Key UX fixes in this C# version
+
+- Section editor now has dedicated **File** and **Folder** target picker buttons (no broken target selection flow)
+- Section and theme dialogs are rebuilt with cleaner table-based layouts
+- Main shell styling uses dark gradients and cleaner typography closer to the original Python visual direction
 
 ## Build executable (Windows)
 
-1. Install **.NET 8 SDK** from Microsoft.
-2. Open terminal in this repo.
-3. Run:
+1. Install **.NET 8 SDK**.
+2. Run from repo root:
 
 ```bat
 build_executable.bat
@@ -37,13 +33,8 @@ Output executable:
 .\dist\LauncherExplorerX\LauncherExplorer.exe
 ```
 
-## Run from source (Windows)
+## Run from source
 
 ```bat
 dotnet run
 ```
-
-## Notes
-
-- This is now a Windows-native .NET desktop app (no Python runtime required).
-- Configuration is stored beside the executable in `launcher_config.json`.
