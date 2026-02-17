@@ -10,30 +10,33 @@ public class MainForm : Form
     private readonly string _configPath = Path.Combine(AppContext.BaseDirectory, "launcher_config.json");
     private AppConfig _config = new();
 
-    private readonly SidebarListBox _shortcutList = new();
-    private readonly TreeView _drivesTree = new();
+    private readonly ListBox _shortcutList = new();
+    private readonly ListBox _driveList = new();
 
-    private readonly TabControl _mainTabs = new() { Dock = DockStyle.Fill };
-    private readonly FlowLayoutPanel _homeFlow = new() { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(20, 12, 20, 20), WrapContents = false, FlowDirection = FlowDirection.TopDown };
+    private readonly Panel _homePanel = new() { Dock = DockStyle.Fill };
+    private readonly Panel _libraryPanel = new() { Dock = DockStyle.Fill, Visible = false };
+    private readonly FlowLayoutPanel _homeFlow = new() { Dock = DockStyle.Fill, AutoScroll = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(10) };
 
     private readonly ListView _libraryView = new() { Dock = DockStyle.Fill, FullRowSelect = true, MultiSelect = false, BorderStyle = BorderStyle.None };
     private readonly ImageList _smallIcons = new() { ColorDepth = ColorDepth.Depth32Bit, ImageSize = new Size(20, 20) };
-    private readonly ImageList _largeIcons = new() { ColorDepth = ColorDepth.Depth32Bit, ImageSize = new Size(88, 88) };
+    private readonly ImageList _largeIcons = new() { ColorDepth = ColorDepth.Depth32Bit, ImageSize = new Size(92, 92) };
+    private readonly PictureBox _preview = new() { Dock = DockStyle.Fill, BackColor = Color.FromArgb(20, 30, 46), SizeMode = PictureBoxSizeMode.Zoom };
+    private readonly Label _pathLabel = new() { Dock = DockStyle.Top, Height = 32, ForeColor = Color.Gainsboro, Padding = new Padding(8, 8, 0, 0) };
+    private readonly ComboBox _layoutCombo = new() { Width = 120, DropDownStyle = ComboBoxStyle.DropDownList };
+    private readonly TrackBar _zoomBar = new() { Width = 150, Minimum = 72, Maximum = 180, Value = 100, TickStyle = TickStyle.None };
 
-    private readonly PictureBox _preview = new() { Dock = DockStyle.Fill, BackColor = Color.FromArgb(18, 28, 44), SizeMode = PictureBoxSizeMode.Zoom };
-    private readonly Label _pathLabel = new() { Dock = DockStyle.Top, Height = 30, Padding = new Padding(8, 7, 8, 0), ForeColor = Color.Gainsboro };
-    private readonly ComboBox _layoutCombo = new() { Width = 140, DropDownStyle = ComboBoxStyle.DropDownList };
-    private readonly TrackBar _zoomBar = new() { Width = 170, Minimum = 72, Maximum = 170, TickStyle = TickStyle.None, Value = 96 };
+    private readonly ComboBox _sortCombo = new() { Width = 170, DropDownStyle = ComboBoxStyle.DropDownList };
+    private readonly TrackBar _homeZoomBar = new() { Width = 160, Minimum = 70, Maximum = 170, Value = 100, TickStyle = TickStyle.None };
 
     private string _currentPath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
     public MainForm()
     {
-        Text = "Launcher Explorer X";
-        Width = 1650;
+        Text = "Launcher File Explorer";
+        Width = 1680;
         Height = 950;
-        MinimumSize = new Size(1200, 760);
         StartPosition = FormStartPosition.CenterScreen;
+        MinimumSize = new Size(1280, 780);
         Font = new Font("Segoe UI", 9.5f);
         DoubleBuffered = true;
 
@@ -49,247 +52,195 @@ public class MainForm : Form
 
     private void BuildUi()
     {
-        var titleBar = new GradientPanel
+        var top = new GradientPanel
         {
             Dock = DockStyle.Top,
-            Height = 78,
-            Padding = new Padding(18, 14, 18, 14),
-            ColorA = Color.FromArgb(6, 10, 22),
-            ColorB = Color.FromArgb(22, 36, 66),
-            Angle = 20f
+            Height = 74,
+            ColorA = Color.FromArgb(6, 12, 23),
+            ColorB = Color.FromArgb(14, 31, 67),
+            Angle = 0f,
+            Padding = new Padding(10)
         };
 
-        var titleWrap = new Panel { Dock = DockStyle.Left, Width = 440 };
+        var titleWrap = new Panel { Dock = DockStyle.Left, Width = 720 };
         titleWrap.Controls.Add(new Label
         {
-            Dock = DockStyle.Fill,
             Text = "Launcher File Explorer",
-            Font = new Font("Segoe UI Semibold", 22f),
+            Font = new Font("Segoe UI Semibold", 24f),
             ForeColor = Color.White,
-            TextAlign = ContentAlignment.MiddleLeft
-        });
-        titleBar.Controls.Add(titleWrap);
-
-        var subtitle = new Label
-        {
+            AutoSize = false,
+            TextAlign = ContentAlignment.MiddleLeft,
             Dock = DockStyle.Left,
-            Width = 300,
-            Text = "Anime launcher vibe • custom themes • rich cards",
-            ForeColor = Color.FromArgb(205, 224, 255),
-            TextAlign = ContentAlignment.MiddleLeft
-        };
-        titleBar.Controls.Add(subtitle);
-
-        var actionStrip = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, WrapContents = false };
-        actionStrip.Controls.Add(MakeTopButton("+ Add Section", (_, _) => AddPosterDialog()));
-        actionStrip.Controls.Add(MakeTopButton("Theme Studio", (_, _) => ThemeDialog()));
-        actionStrip.Controls.Add(MakeTopButton("Refresh", (_, _) => { LoadSidebar(); LoadHome(); LoadDirectory(_currentPath); }));
-        titleBar.Controls.Add(actionStrip);
-
-        Controls.Add(titleBar);
-
-        var shell = new SplitContainer
+            Width = 420
+        });
+        titleWrap.Controls.Add(new Label
         {
+            Text = "Anime launcher vibe • custom themes • rich cards",
+            ForeColor = Color.FromArgb(220, 230, 255),
+            AutoSize = false,
+            TextAlign = ContentAlignment.MiddleLeft,
             Dock = DockStyle.Fill,
-            SplitterDistance = 290,
-            BackColor = Color.FromArgb(10, 16, 28),
-            IsSplitterFixed = false,
-            BorderStyle = BorderStyle.None
-        };
-        Controls.Add(shell);
+            Padding = new Padding(8, 27, 0, 0)
+        });
+        top.Controls.Add(titleWrap);
 
-        shell.Panel1.Padding = new Padding(12);
-        shell.Panel2.Padding = new Padding(0, 8, 8, 8);
+        var actions = new FlowLayoutPanel { Dock = DockStyle.Right, AutoSize = true, WrapContents = false, FlowDirection = FlowDirection.LeftToRight };
+        actions.Controls.Add(MakeTopButton("+ Add Section", (_, _) => AddPosterDialog()));
+        actions.Controls.Add(MakeTopButton("Map File Image", (_, _) => MapCurrentFileImage()));
+        actions.Controls.Add(MakeTopButton("Theme Studio", (_, _) => ThemeDialog()));
+        actions.Controls.Add(MakeTopButton("Refresh", (_, _) => { LoadSidebar(); LoadHome(); LoadDirectory(_currentPath); }));
+        top.Controls.Add(actions);
+        Controls.Add(top);
 
-        var side = BuildSidebar();
-        shell.Panel1.Controls.Add(side);
+        var app = new SplitContainer { Dock = DockStyle.Fill, SplitterDistance = 175, BorderStyle = BorderStyle.FixedSingle };
+        Controls.Add(app);
 
-        _mainTabs.Appearance = TabAppearance.Normal;
-        _mainTabs.DrawMode = TabDrawMode.OwnerDrawFixed;
-        _mainTabs.ItemSize = new Size(120, 32);
-        _mainTabs.DrawItem += DrawTabs;
-        _mainTabs.Controls.Add(new TabPage("Home") { BackColor = Color.FromArgb(8, 14, 24) });
-        _mainTabs.Controls.Add(new TabPage("Library") { BackColor = Color.FromArgb(8, 14, 24) });
-
-        _mainTabs.TabPages[0].Controls.Add(BuildHomePanel());
-        _mainTabs.TabPages[1].Controls.Add(BuildLibraryPanel());
-        shell.Panel2.Controls.Add(_mainTabs);
+        app.Panel1.Controls.Add(BuildSidebar());
+        app.Panel2.Controls.Add(BuildContent());
 
         _shortcutList.DoubleClick += (_, _) => OpenShortcut();
-        _drivesTree.NodeMouseDoubleClick += (_, e) =>
+        _driveList.DoubleClick += (_, _) =>
         {
-            if (Directory.Exists(e.Node.Text))
-            {
-                _mainTabs.SelectedIndex = 1;
-                LoadDirectory(e.Node.Text);
-            }
+            if (_driveList.SelectedItem is not string drive) return;
+            OpenLibraryPath(drive);
         };
-
-        _libraryView.DoubleClick += (_, _) => OpenSelectedInLibrary();
-        _libraryView.MouseUp += LibraryRightClick;
-        _libraryView.SelectedIndexChanged += (_, _) => UpdatePreview();
 
         _layoutCombo.Items.AddRange(["List", "Tiles", "Icons"]);
         _layoutCombo.SelectedIndex = 0;
         _layoutCombo.SelectedIndexChanged += (_, _) => ApplyLayout();
         _zoomBar.ValueChanged += (_, _) => ApplyLayout();
-    }
 
-    private Panel BuildSidebar()
-    {
-        var panel = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(6, 10, 20), Padding = new Padding(8) };
-        panel.Controls.Add(new Label
-        {
-            Text = "Drives",
-            Dock = DockStyle.Top,
-            Height = 30,
-            ForeColor = Color.White,
-            Font = new Font("Segoe UI Semibold", 12f),
-            Padding = new Padding(2, 8, 0, 0)
-        });
-
-        _drivesTree.Dock = DockStyle.Fill;
-        _drivesTree.BorderStyle = BorderStyle.None;
-        _drivesTree.HideSelection = false;
-        _drivesTree.Indent = 18;
-        _drivesTree.ItemHeight = 24;
-
-        panel.Controls.Add(_drivesTree);
-        panel.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 12 });
-        panel.Controls.Add(new Label
-        {
-            Text = "Shortcuts",
-            Dock = DockStyle.Top,
-            Height = 30,
-            ForeColor = Color.White,
-            Font = new Font("Segoe UI Semibold", 12f),
-            Padding = new Padding(2, 8, 0, 0)
-        });
-
-        _shortcutList.Dock = DockStyle.Top;
-        _shortcutList.Height = 230;
-        panel.Controls.Add(_shortcutList);
-        return panel;
-    }
-
-    private Control BuildHomePanel()
-    {
-        var wrap = new Panel { Dock = DockStyle.Fill, Padding = new Padding(0, 10, 10, 10), BackColor = Color.Transparent };
-
-        var viewBar = new GradientPanel
-        {
-            Dock = DockStyle.Top,
-            Height = 44,
-            ColorA = Color.FromArgb(22, 32, 52),
-            ColorB = Color.FromArgb(8, 14, 24),
-            Angle = 0f,
-            Padding = new Padding(10, 8, 10, 8)
-        };
-
-        var homeBtn = MakeTopButton("Home", (_, _) => _mainTabs.SelectedIndex = 0);
-        var libBtn = MakeTopButton("Library", (_, _) => _mainTabs.SelectedIndex = 1);
-        homeBtn.Width = 90;
-        libBtn.Width = 90;
-
-        viewBar.Controls.Add(libBtn);
-        viewBar.Controls.Add(homeBtn);
-        libBtn.Dock = DockStyle.Left;
-        homeBtn.Dock = DockStyle.Left;
-
-        wrap.Controls.Add(_homeFlow);
-        wrap.Controls.Add(viewBar);
-        return wrap;
-    }
-
-    private Control BuildLibraryPanel()
-    {
-        var layout = new SplitContainer { Dock = DockStyle.Fill, SplitterDistance = 980, BackColor = Color.Transparent };
-
-        var left = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8, 6, 8, 8), BackColor = Color.FromArgb(9, 16, 28) };
-        var top = new GradientPanel
-        {
-            Dock = DockStyle.Top,
-            Height = 44,
-            ColorA = Color.FromArgb(22, 32, 52),
-            ColorB = Color.FromArgb(8, 14, 24),
-            Angle = 0f,
-            Padding = new Padding(8)
-        };
-
-        var labelView = new Label { Text = "Layout:", Width = 56, ForeColor = Color.Gainsboro, TextAlign = ContentAlignment.MiddleLeft, Dock = DockStyle.Left };
-        var labelZoom = new Label { Text = "Scale:", Width = 50, ForeColor = Color.Gainsboro, TextAlign = ContentAlignment.MiddleLeft, Dock = DockStyle.Left };
-        _layoutCombo.Dock = DockStyle.Left;
-        _zoomBar.Dock = DockStyle.Left;
-
-        top.Controls.Add(_zoomBar);
-        top.Controls.Add(labelZoom);
-        top.Controls.Add(new Panel { Dock = DockStyle.Left, Width = 16 });
-        top.Controls.Add(_layoutCombo);
-        top.Controls.Add(labelView);
-
-        _pathLabel.BackColor = Color.FromArgb(11, 20, 34);
+        _sortCombo.Items.AddRange(["Alphabetical (A-Z)", "Alphabetical (Z-A)"]);
+        _sortCombo.SelectedIndex = 0;
+        _sortCombo.SelectedIndexChanged += (_, _) => LoadHome();
+        _homeZoomBar.ValueChanged += (_, _) => LoadHome();
 
         _libraryView.SmallImageList = _smallIcons;
         _libraryView.LargeImageList = _largeIcons;
-
-        left.Controls.Add(_libraryView);
-        left.Controls.Add(top);
-        left.Controls.Add(_pathLabel);
-
-        var right = new Panel { Dock = DockStyle.Fill, Padding = new Padding(10), BackColor = Color.FromArgb(10, 16, 28) };
-        right.Controls.Add(_preview);
-
-        layout.Panel1.Controls.Add(left);
-        layout.Panel2.Controls.Add(right);
-        return layout;
+        _libraryView.DoubleClick += (_, _) => OpenSelectedInLibrary();
+        _libraryView.SelectedIndexChanged += (_, _) => UpdatePreview();
+        _libraryView.MouseUp += LibraryRightClick;
     }
 
-    private Button MakeTopButton(string text, EventHandler onClick)
+    private Control BuildSidebar()
+    {
+        var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(10), BackColor = Color.FromArgb(2, 8, 18) };
+
+        panel.Controls.Add(new Label { Text = "Drives", Dock = DockStyle.Top, Height = 34, ForeColor = Color.White, Font = new Font("Segoe UI Semibold", 15f), Padding = new Padding(0, 6, 0, 0) });
+        _driveList.Dock = DockStyle.Fill;
+        _driveList.BackColor = Color.White;
+        _driveList.ForeColor = Color.Black;
+        panel.Controls.Add(_driveList);
+
+        panel.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 14 });
+        panel.Controls.Add(new Label { Text = "Shortcuts", Dock = DockStyle.Top, Height = 34, ForeColor = Color.White, Font = new Font("Segoe UI Semibold", 15f), Padding = new Padding(0, 6, 0, 0) });
+        _shortcutList.Dock = DockStyle.Top;
+        _shortcutList.Height = 230;
+        _shortcutList.BackColor = Color.White;
+        _shortcutList.ForeColor = Color.Black;
+        panel.Controls.Add(_shortcutList);
+
+        return panel;
+    }
+
+    private Control BuildContent()
+    {
+        var container = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(7, 16, 30), Padding = new Padding(10) };
+
+        var viewRow = new Panel { Dock = DockStyle.Top, Height = 40, BackColor = Color.FromArgb(5, 14, 30) };
+        viewRow.Controls.Add(new Label { Text = "View:", ForeColor = Color.White, Width = 44, Dock = DockStyle.Left, TextAlign = ContentAlignment.MiddleLeft });
+        var homeBtn = MakeTopButton("Home", (_, _) => SetMode(true));
+        var libBtn = MakeTopButton("Library", (_, _) => SetMode(false));
+        homeBtn.Width = 92;
+        libBtn.Width = 92;
+        homeBtn.Dock = DockStyle.Left;
+        libBtn.Dock = DockStyle.Left;
+        viewRow.Controls.Add(libBtn);
+        viewRow.Controls.Add(homeBtn);
+
+        container.Controls.Add(_homePanel);
+        container.Controls.Add(_libraryPanel);
+        container.Controls.Add(viewRow);
+
+        BuildHomeUi();
+        BuildLibraryUi();
+        return container;
+    }
+
+    private void BuildHomeUi()
+    {
+        var top = new Panel { Dock = DockStyle.Top, Height = 42, BackColor = Color.FromArgb(15, 26, 44), Padding = new Padding(8, 8, 8, 8) };
+        top.Controls.Add(new Label { Text = "100%", ForeColor = Color.White, Dock = DockStyle.Right, Width = 60, TextAlign = ContentAlignment.MiddleRight });
+        top.Controls.Add(_homeZoomBar);
+        top.Controls.Add(new Label { Text = "Zoom:", ForeColor = Color.White, Dock = DockStyle.Left, Width = 52, TextAlign = ContentAlignment.MiddleLeft });
+        top.Controls.Add(new Panel { Dock = DockStyle.Left, Width = 16 });
+        top.Controls.Add(_sortCombo);
+        top.Controls.Add(new Label { Text = "Sort:", ForeColor = Color.White, Dock = DockStyle.Left, Width = 42, TextAlign = ContentAlignment.MiddleLeft });
+
+        var wrap = new Panel { Dock = DockStyle.Fill, Padding = new Padding(0, 8, 0, 0) };
+        wrap.Controls.Add(_homeFlow);
+        wrap.Controls.Add(top);
+
+        _homePanel.Controls.Add(wrap);
+    }
+
+    private void BuildLibraryUi()
+    {
+        var split = new SplitContainer { Dock = DockStyle.Fill, SplitterDistance = 980 };
+
+        var left = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(8, 16, 30) };
+        var libTop = new Panel { Dock = DockStyle.Top, Height = 44, BackColor = Color.FromArgb(15, 26, 44), Padding = new Padding(8) };
+        libTop.Controls.Add(_zoomBar);
+        libTop.Controls.Add(new Label { Text = "Zoom:", Dock = DockStyle.Left, Width = 48, ForeColor = Color.White, TextAlign = ContentAlignment.MiddleLeft });
+        libTop.Controls.Add(new Panel { Dock = DockStyle.Left, Width = 12 });
+        libTop.Controls.Add(_layoutCombo);
+        libTop.Controls.Add(new Label { Text = "Layout:", Dock = DockStyle.Left, Width = 56, ForeColor = Color.White, TextAlign = ContentAlignment.MiddleLeft });
+
+        _pathLabel.BackColor = Color.FromArgb(10, 19, 34);
+        left.Controls.Add(_libraryView);
+        left.Controls.Add(libTop);
+        left.Controls.Add(_pathLabel);
+
+        var right = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8), BackColor = Color.FromArgb(9, 16, 30) };
+        right.Controls.Add(_preview);
+
+        split.Panel1.Controls.Add(left);
+        split.Panel2.Controls.Add(right);
+        _libraryPanel.Controls.Add(split);
+    }
+
+    private Button MakeTopButton(string text, EventHandler click)
     {
         var b = new Button
         {
             Text = text,
+            Width = 124,
             Height = 36,
-            Width = 126,
             Margin = new Padding(0, 0, 8, 0),
             FlatStyle = FlatStyle.Flat,
+            BackColor = Color.FromArgb(25, 44, 78),
             ForeColor = Color.White,
-            BackColor = Color.FromArgb(26, 45, 79),
             Font = new Font("Segoe UI Semibold", 10f)
         };
         b.FlatAppearance.BorderSize = 0;
-        b.Click += onClick;
+        b.Click += click;
         return b;
     }
 
-    private void DrawTabs(object? sender, DrawItemEventArgs e)
+    private void SetMode(bool home)
     {
-        var isSel = e.Index == _mainTabs.SelectedIndex;
-        using var back = new SolidBrush(isSel ? Color.FromArgb(38, 60, 96) : Color.FromArgb(16, 24, 40));
-        using var fore = new SolidBrush(Color.White);
-        e.Graphics.FillRectangle(back, e.Bounds);
-        var text = _mainTabs.TabPages[e.Index].Text;
-        var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-        e.Graphics.DrawString(text, new Font("Segoe UI Semibold", 9.5f), fore, e.Bounds, sf);
+        _homePanel.Visible = home;
+        _libraryPanel.Visible = !home;
     }
 
     private void LoadConfig()
     {
         if (!File.Exists(_configPath)) return;
-        try
-        {
-            _config = JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(_configPath)) ?? new AppConfig();
-        }
-        catch
-        {
-            _config = new AppConfig();
-        }
+        try { _config = JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(_configPath)) ?? new AppConfig(); }
+        catch { _config = new AppConfig(); }
     }
 
-    private void SaveConfig()
-    {
-        File.WriteAllText(_configPath, JsonSerializer.Serialize(_config, new JsonSerializerOptions { WriteIndented = true }));
-    }
+    private void SaveConfig() => File.WriteAllText(_configPath, JsonSerializer.Serialize(_config, new JsonSerializerOptions { WriteIndented = true }));
 
     private void ApplyTheme()
     {
@@ -299,41 +250,28 @@ public class MainForm : Form
             catch { return fallback; }
         }
 
-        var bg = Parse(_config.Theme.Background, Color.FromArgb(8, 14, 24));
-        var surface = Parse(_config.Theme.Surface, Color.FromArgb(12, 20, 34));
-        var accent = Parse(_config.Theme.Accent, Color.FromArgb(70, 145, 255));
+        var bg = Parse(_config.Theme.Background, Color.FromArgb(5, 12, 24));
+        var accent = Parse(_config.Theme.Accent, Color.FromArgb(80, 150, 255));
 
         BackColor = bg;
-        _homeFlow.BackColor = Color.FromArgb(Math.Max(bg.R - 3, 0), Math.Max(bg.G - 3, 0), Math.Max(bg.B - 3, 0));
-        _shortcutList.BackColor = surface;
-        _shortcutList.ForeColor = Color.White;
-        _drivesTree.BackColor = surface;
-        _drivesTree.ForeColor = Color.WhiteSmoke;
-        _libraryView.BackColor = Color.FromArgb(13, 20, 34);
-        _libraryView.ForeColor = Color.White;
-        _pathLabel.ForeColor = Color.Gainsboro;
-
-        Paint -= PaintGradient;
-        Paint += PaintGradient;
-
-        void PaintGradient(object? _, PaintEventArgs e)
-        {
-            using var brush = new LinearGradientBrush(ClientRectangle, Color.FromArgb(8, 14, 24), Color.FromArgb(accent.R / 2, accent.G / 2, accent.B / 2), 135f);
-            e.Graphics.FillRectangle(brush, ClientRectangle);
-        }
-
+        Paint -= OnPaintGradient;
+        Paint += OnPaintGradient;
         Invalidate();
+
+        void OnPaintGradient(object? _, PaintEventArgs e)
+        {
+            using var br = new LinearGradientBrush(ClientRectangle, bg, Color.FromArgb(accent.R / 3, accent.G / 3, accent.B / 3), 135f);
+            e.Graphics.FillRectangle(br, ClientRectangle);
+        }
     }
 
     private void LoadSidebar()
     {
         _shortcutList.Items.Clear();
-        foreach (var s in _config.Sections.Where(s => s.Placement == "shortcut"))
-            _shortcutList.Items.Add(s.Name);
+        foreach (var item in _config.Sections.Where(s => s.Placement == "shortcut")) _shortcutList.Items.Add(item.Name);
 
-        _drivesTree.Nodes.Clear();
-        foreach (var drive in DriveInfo.GetDrives().Where(d => d.IsReady))
-            _drivesTree.Nodes.Add(new TreeNode(drive.RootDirectory.FullName));
+        _driveList.Items.Clear();
+        foreach (var d in DriveInfo.GetDrives().Where(d => d.IsReady)) _driveList.Items.Add(d.RootDirectory.FullName);
     }
 
     private void LoadHome()
@@ -341,92 +279,67 @@ public class MainForm : Form
         _homeFlow.SuspendLayout();
         _homeFlow.Controls.Clear();
 
-        var groups = _config.Sections.Where(s => s.Placement == "home").GroupBy(s => string.IsNullOrWhiteSpace(s.Group) ? "Recently Added" : s.Group);
-        foreach (var group in groups)
+        var sections = _config.Sections.Where(s => s.Placement == "home");
+        sections = _sortCombo.SelectedIndex == 1 ? sections.OrderByDescending(s => s.Name) : sections.OrderBy(s => s.Name);
+
+        var grouped = sections.GroupBy(s => string.IsNullOrWhiteSpace(s.Group) ? "Recently Added" : s.Group);
+        foreach (var group in grouped)
         {
             _homeFlow.Controls.Add(new Label
             {
                 Text = group.Key,
-                Width = _homeFlow.Width - 60,
-                Height = 42,
                 ForeColor = Color.White,
-                Font = new Font("Segoe UI Semibold", 21f),
-                Margin = new Padding(0, 8, 0, 4)
+                Font = new Font("Segoe UI Semibold", 22f),
+                Height = 44,
+                Width = _homeFlow.Width - 48,
+                Margin = new Padding(4, 8, 0, 4)
             });
 
+            var zoom = _homeZoomBar.Value / 100f;
             var row = new FlowLayoutPanel
             {
-                Width = _homeFlow.Width - 70,
-                Height = 285,
+                Width = _homeFlow.Width - 52,
+                Height = (int)(300 * zoom),
                 WrapContents = false,
                 AutoScroll = true,
-                BackColor = Color.FromArgb(9, 18, 34),
-                Margin = new Padding(0, 0, 0, 14),
-                Padding = new Padding(10)
+                BackColor = Color.FromArgb(25, 34, 52),
+                Padding = new Padding(8),
+                Margin = new Padding(4, 0, 4, 14)
             };
 
-            foreach (var item in group)
-                row.Controls.Add(BuildPosterCard(item));
-
+            foreach (var item in group) row.Controls.Add(BuildPosterCard(item, zoom));
             _homeFlow.Controls.Add(row);
         }
 
         _homeFlow.ResumeLayout();
     }
 
-    private Control BuildPosterCard(PosterItem item)
+    private Control BuildPosterCard(PosterItem item, float zoom)
     {
-        var card = new RoundedPanel
-        {
-            Width = item.Visual == "banner" ? 360 : 190,
-            Height = item.Visual == "banner" ? 228 : 260,
-            Radius = 16,
-            FillColor = Color.FromArgb(30, 40, 58),
-            Margin = new Padding(8),
-            Cursor = Cursors.Hand,
-            Padding = new Padding(8)
-        };
+        var width = item.Visual == "banner" ? (int)(390 * zoom) : (int)(220 * zoom);
+        var height = item.Visual == "banner" ? (int)(248 * zoom) : (int)(300 * zoom);
 
-        var title = new Label
-        {
-            Text = item.Name,
-            Dock = DockStyle.Bottom,
-            Height = 42,
-            ForeColor = Color.White,
-            TextAlign = ContentAlignment.MiddleCenter,
-            Font = new Font("Segoe UI Semibold", 11f)
-        };
-
-        var subtitle = new Label
-        {
-            Text = item.Type == "folder" ? "[folder]" : "[app]",
-            Dock = DockStyle.Bottom,
-            Height = 22,
-            ForeColor = Color.FromArgb(180, 208, 255),
-            TextAlign = ContentAlignment.MiddleCenter,
-            Font = new Font("Segoe UI", 9f)
-        };
-
-        var picture = new PictureBox { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.FromArgb(20, 28, 44) };
+        var card = new RoundedPanel { Width = width, Height = height, FillColor = Color.FromArgb(35, 44, 62), Radius = 16, Margin = new Padding(8), Padding = new Padding(8), Cursor = Cursors.Hand };
+        var picture = new PictureBox { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.FromArgb(20, 28, 42) };
         if (!string.IsNullOrWhiteSpace(item.ImagePath) && File.Exists(item.ImagePath))
         {
             try { picture.Image = Image.FromFile(item.ImagePath); } catch { }
         }
 
+        var name = new Label { Text = item.Name, Dock = DockStyle.Bottom, Height = 40, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.White, Font = new Font("Segoe UI Semibold", 12f) };
+        var type = new Label { Text = item.Type == "folder" ? "[folder]" : "[shortcut]", Dock = DockStyle.Bottom, Height = 24, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.FromArgb(194, 214, 250) };
         var footer = new Panel { Dock = DockStyle.Bottom, Height = 30 };
-        var open = new LinkLabel { Text = "Open", Dock = DockStyle.Left, Width = 60, LinkColor = Color.White, ActiveLinkColor = Color.LightBlue };
-        var edit = new LinkLabel { Text = "Edit", Dock = DockStyle.Right, Width = 60, LinkColor = Color.White, ActiveLinkColor = Color.LightBlue, TextAlign = ContentAlignment.MiddleRight };
-
+        var open = new LinkLabel { Text = "Open", Dock = DockStyle.Left, Width = 60, LinkColor = Color.White };
+        var edit = new LinkLabel { Text = "Edit", Dock = DockStyle.Right, Width = 60, LinkColor = Color.White, TextAlign = ContentAlignment.MiddleRight };
         open.Click += (_, _) => OpenPoster(item);
         edit.Click += (_, _) => EditPoster(item);
-
         footer.Controls.Add(open);
         footer.Controls.Add(edit);
 
         card.Controls.Add(picture);
         card.Controls.Add(footer);
-        card.Controls.Add(subtitle);
-        card.Controls.Add(title);
+        card.Controls.Add(type);
+        card.Controls.Add(name);
 
         card.DoubleClick += (_, _) => OpenPoster(item);
         picture.DoubleClick += (_, _) => OpenPoster(item);
@@ -434,16 +347,9 @@ public class MainForm : Form
         var menu = new ContextMenuStrip();
         menu.Items.Add("Open", null, (_, _) => OpenPoster(item));
         menu.Items.Add("Edit", null, (_, _) => EditPoster(item));
-        menu.Items.Add("Delete", null, (_, _) =>
-        {
-            _config.Sections.Remove(item);
-            SaveConfig();
-            LoadSidebar();
-            LoadHome();
-        });
+        menu.Items.Add("Delete", null, (_, _) => { _config.Sections.Remove(item); SaveConfig(); LoadSidebar(); LoadHome(); });
         card.ContextMenuStrip = menu;
         picture.ContextMenuStrip = menu;
-
         return card;
     }
 
@@ -451,25 +357,13 @@ public class MainForm : Form
     {
         if (item.Type == "folder" || Directory.Exists(item.TargetPath))
         {
-            if (Directory.Exists(item.TargetPath))
-            {
-                _mainTabs.SelectedIndex = 1;
-                LoadDirectory(item.TargetPath);
-            }
-            else
-            {
-                MessageBox.Show("Target folder does not exist.", "Open", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            }
+            if (Directory.Exists(item.TargetPath)) OpenLibraryPath(item.TargetPath);
+            else MessageBox.Show("Folder target does not exist.", "Open", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
-        if (File.Exists(item.TargetPath))
-        {
-            OpenExternal(item.TargetPath);
-            return;
-        }
-
-        MessageBox.Show("Target file/app does not exist.", "Open", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        if (File.Exists(item.TargetPath)) OpenExternal(item.TargetPath);
+        else MessageBox.Show("App/file target does not exist.", "Open", MessageBoxButtons.OK, MessageBoxIcon.Warning);
     }
 
     private void OpenShortcut()
@@ -477,6 +371,12 @@ public class MainForm : Form
         if (_shortcutList.SelectedItem is not string name) return;
         var item = _config.Sections.FirstOrDefault(s => s.Placement == "shortcut" && s.Name == name);
         if (item is not null) OpenPoster(item);
+    }
+
+    private void OpenLibraryPath(string path)
+    {
+        SetMode(false);
+        LoadDirectory(path);
     }
 
     private void LoadDirectory(string path)
@@ -491,7 +391,6 @@ public class MainForm : Form
 
         IEnumerable<FileEntry> dirs = [];
         IEnumerable<FileEntry> files = [];
-
         try
         {
             dirs = Directory.GetDirectories(path).Select(d => new FileEntry(d, true));
@@ -499,19 +398,19 @@ public class MainForm : Form
         }
         catch (Exception ex)
         {
-            MessageBox.Show(ex.Message, "Load directory", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(ex.Message, "Library", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
 
-        foreach (var entry in dirs.Concat(files))
+        foreach (var file in dirs.Concat(files))
         {
-            var (small, large) = ResolveIcon(entry.FullPath, entry.IsDirectory);
-            _smallIcons.Images.Add(entry.FullPath, small);
-            _largeIcons.Images.Add(entry.FullPath, large);
+            var icon = ResolveIcon(file.FullPath, file.IsDirectory);
+            _smallIcons.Images.Add(file.FullPath, icon.small);
+            _largeIcons.Images.Add(file.FullPath, icon.large);
 
-            var item = new ListViewItem(entry.Name) { Tag = entry.FullPath, ImageKey = entry.FullPath };
-            item.SubItems.Add(entry.IsDirectory ? "Folder" : entry.Extension);
-            item.SubItems.Add(entry.SizeText);
-            item.SubItems.Add(entry.Modified.ToString("g"));
+            var item = new ListViewItem(file.Name) { Tag = file.FullPath, ImageKey = file.FullPath };
+            item.SubItems.Add(file.IsDirectory ? "Folder" : file.Extension);
+            item.SubItems.Add(file.SizeText);
+            item.SubItems.Add(file.Modified.ToString("g"));
             _libraryView.Items.Add(item);
         }
 
@@ -520,8 +419,7 @@ public class MainForm : Form
 
     private void ApplyLayout()
     {
-        var smallSize = Math.Clamp(_zoomBar.Value / 3, 18, 58);
-        _smallIcons.ImageSize = new Size(smallSize, smallSize);
+        _smallIcons.ImageSize = new Size(Math.Clamp(_zoomBar.Value / 4, 18, 56), Math.Clamp(_zoomBar.Value / 4, 18, 56));
         _largeIcons.ImageSize = new Size(_zoomBar.Value, _zoomBar.Value);
 
         _libraryView.Columns.Clear();
@@ -545,40 +443,41 @@ public class MainForm : Form
 
     private (Image small, Image large) ResolveIcon(string path, bool isDir)
     {
-        if (_config.FileIcons.TryGetValue(path, out var customPath) && File.Exists(customPath))
+        if (_config.FileIcons.TryGetValue(path, out var custom) && File.Exists(custom))
         {
             try
             {
-                using var src = Image.FromFile(customPath);
+                using var src = Image.FromFile(custom);
                 return (new Bitmap(src, _smallIcons.ImageSize), new Bitmap(src, _largeIcons.ImageSize));
             }
             catch { }
         }
 
-        var color = isDir ? Color.FromArgb(250, 188, 68) : Color.FromArgb(64, 152, 255);
-        Bitmap Build(Size size)
+        var color = isDir ? Color.FromArgb(245, 185, 70) : Color.FromArgb(88, 158, 255);
+        Bitmap Make(Size s)
         {
-            var bmp = new Bitmap(size.Width, size.Height);
+            var bmp = new Bitmap(s.Width, s.Height);
             using var g = Graphics.FromImage(bmp);
             g.SmoothingMode = SmoothingMode.AntiAlias;
             using var b = new SolidBrush(color);
-            using var p = new GraphicsPath();
-            p.AddArc(1, 1, 10, 10, 180, 90);
-            p.AddArc(size.Width - 11, 1, 10, 10, 270, 90);
-            p.AddArc(size.Width - 11, size.Height - 11, 10, 10, 0, 90);
-            p.AddArc(1, size.Height - 11, 10, 10, 90, 90);
-            p.CloseFigure();
-            g.FillPath(b, p);
+            using var path = new GraphicsPath();
+            path.AddArc(1, 1, 10, 10, 180, 90);
+            path.AddArc(s.Width - 11, 1, 10, 10, 270, 90);
+            path.AddArc(s.Width - 11, s.Height - 11, 10, 10, 0, 90);
+            path.AddArc(1, s.Height - 11, 10, 10, 90, 90);
+            path.CloseFigure();
+            g.FillPath(b, path);
             return bmp;
         }
 
-        return (Build(_smallIcons.ImageSize), Build(_largeIcons.ImageSize));
+        return (Make(_smallIcons.ImageSize), Make(_largeIcons.ImageSize));
     }
 
     private void UpdatePreview()
     {
         if (_libraryView.SelectedItems.Count == 0) return;
         var path = _libraryView.SelectedItems[0].Tag?.ToString() ?? "";
+
         if (File.Exists(path) && IsImage(path))
         {
             try { _preview.Image = Image.FromFile(path); return; } catch { }
@@ -597,14 +496,8 @@ public class MainForm : Form
     {
         if (_libraryView.SelectedItems.Count == 0) return;
         var path = _libraryView.SelectedItems[0].Tag?.ToString() ?? "";
-
-        if (Directory.Exists(path))
-        {
-            LoadDirectory(path);
-            return;
-        }
-
-        if (File.Exists(path)) OpenExternal(path);
+        if (Directory.Exists(path)) LoadDirectory(path);
+        else if (File.Exists(path)) OpenExternal(path);
     }
 
     private static void OpenExternal(string path)
@@ -619,8 +512,8 @@ public class MainForm : Form
         var hit = _libraryView.GetItemAt(e.X, e.Y);
         if (hit is null) return;
         hit.Selected = true;
-
         var path = hit.Tag?.ToString() ?? "";
+
         var menu = new ContextMenuStrip();
         menu.Items.Add("Open", null, (_, _) => OpenSelectedInLibrary());
         menu.Items.Add("Rename", null, (_, _) => RenamePath(path));
@@ -629,18 +522,17 @@ public class MainForm : Form
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Change Icon Image", null, (_, _) => ChangeIcon(path));
         menu.Items.Add("Remove Custom Icon", null, (_, _) => { _config.FileIcons.Remove(path); SaveConfig(); LoadDirectory(_currentPath); });
-        menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Properties", null, (_, _) => MessageBox.Show(path, "Path", MessageBoxButtons.OK, MessageBoxIcon.Information));
         menu.Show(_libraryView, e.Location);
     }
 
     private void RenamePath(string path)
     {
-        var form = new InputDialog("Rename", "New name:", Path.GetFileName(path));
-        if (form.ShowDialog(this) != DialogResult.OK) return;
-        var newName = form.Value.Trim();
-        if (string.IsNullOrWhiteSpace(newName)) return;
+        using var prompt = new InputDialog("Rename", "New name:", Path.GetFileName(path));
+        if (prompt.ShowDialog(this) != DialogResult.OK) return;
 
+        var newName = prompt.Value.Trim();
+        if (string.IsNullOrWhiteSpace(newName)) return;
         var parent = Directory.GetParent(path)?.FullName;
         if (string.IsNullOrWhiteSpace(parent)) return;
         var newPath = Path.Combine(parent, newName);
@@ -649,7 +541,7 @@ public class MainForm : Form
         {
             if (Directory.Exists(path)) Directory.Move(path, newPath);
             else if (File.Exists(path)) File.Move(path, newPath);
-            if (_config.FileIcons.Remove(path, out var iconPath)) _config.FileIcons[newPath] = iconPath;
+            if (_config.FileIcons.Remove(path, out var img)) _config.FileIcons[newPath] = img;
             SaveConfig();
             LoadDirectory(_currentPath);
         }
@@ -661,14 +553,14 @@ public class MainForm : Form
 
     private void CompressPath(string path)
     {
-        var zip = path.TrimEnd(Path.DirectorySeparatorChar) + ".zip";
+        var outZip = path.TrimEnd(Path.DirectorySeparatorChar) + ".zip";
         try
         {
-            if (Directory.Exists(path)) ZipFile.CreateFromDirectory(path, zip);
+            if (Directory.Exists(path)) ZipFile.CreateFromDirectory(path, outZip);
             else
             {
-                using var archive = ZipFile.Open(zip, ZipArchiveMode.Create);
-                archive.CreateEntryFromFile(path, Path.GetFileName(path));
+                using var zip = ZipFile.Open(outZip, ZipArchiveMode.Create);
+                zip.CreateEntryFromFile(path, Path.GetFileName(path));
             }
             LoadDirectory(_currentPath);
         }
@@ -680,8 +572,7 @@ public class MainForm : Form
 
     private void DeletePath(string path)
     {
-        if (MessageBox.Show($"Delete '{Path.GetFileName(path)}'?", "Delete", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
-            return;
+        if (MessageBox.Show($"Delete '{Path.GetFileName(path)}'?", "Delete", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
 
         try
         {
@@ -706,12 +597,24 @@ public class MainForm : Form
         LoadDirectory(_currentPath);
     }
 
+    private void MapCurrentFileImage()
+    {
+        if (_libraryView.SelectedItems.Count == 0)
+        {
+            MessageBox.Show("Select a file/folder in Library first.", "Map File Image", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var path = _libraryView.SelectedItems[0].Tag?.ToString() ?? "";
+        if (string.IsNullOrWhiteSpace(path)) return;
+        ChangeIcon(path);
+    }
+
     private void AddPosterDialog()
     {
-        using var editor = new PosterEditorForm();
-        if (editor.ShowDialog(this) != DialogResult.OK || editor.Item is null) return;
-
-        _config.Sections.Add(editor.Item);
+        using var dlg = new PosterEditorForm();
+        if (dlg.ShowDialog(this) != DialogResult.OK || dlg.Item is null) return;
+        _config.Sections.Add(dlg.Item);
         SaveConfig();
         LoadSidebar();
         LoadHome();
@@ -719,16 +622,16 @@ public class MainForm : Form
 
     private void EditPoster(PosterItem item)
     {
-        using var editor = new PosterEditorForm(item);
-        if (editor.ShowDialog(this) != DialogResult.OK || editor.Item is null) return;
+        using var dlg = new PosterEditorForm(item);
+        if (dlg.ShowDialog(this) != DialogResult.OK || dlg.Item is null) return;
 
-        item.Name = editor.Item.Name;
-        item.TargetPath = editor.Item.TargetPath;
-        item.Type = editor.Item.Type;
-        item.Visual = editor.Item.Visual;
-        item.Group = editor.Item.Group;
-        item.Placement = editor.Item.Placement;
-        item.ImagePath = editor.Item.ImagePath;
+        item.Name = dlg.Item.Name;
+        item.TargetPath = dlg.Item.TargetPath;
+        item.Type = dlg.Item.Type;
+        item.Visual = dlg.Item.Visual;
+        item.Group = dlg.Item.Group;
+        item.Placement = dlg.Item.Placement;
+        item.ImagePath = dlg.Item.ImagePath;
 
         SaveConfig();
         LoadSidebar();
@@ -737,13 +640,11 @@ public class MainForm : Form
 
     private void ThemeDialog()
     {
-        using var editor = new ThemeEditorForm(_config.Theme);
-        if (editor.ShowDialog(this) != DialogResult.OK || editor.Theme is null) return;
-
-        _config.Theme = editor.Theme;
+        using var dlg = new ThemeEditorForm(_config.Theme);
+        if (dlg.ShowDialog(this) != DialogResult.OK || dlg.Theme is null) return;
+        _config.Theme = dlg.Theme;
         SaveConfig();
         ApplyTheme();
-        LoadHome();
     }
 
     private sealed record FileEntry(string FullPath, bool IsDirectory)
@@ -751,7 +652,6 @@ public class MainForm : Form
         public string Name => Path.GetFileName(FullPath);
         public string Extension => IsDirectory ? "Folder" : Path.GetExtension(FullPath).Trim('.').ToUpperInvariant();
         public DateTime Modified => IsDirectory ? Directory.GetLastWriteTime(FullPath) : File.GetLastWriteTime(FullPath);
-
         public string SizeText
         {
             get
@@ -778,7 +678,6 @@ public sealed class PosterEditorForm : Form
     private readonly ComboBox _visualBox = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly ComboBox _placementBox = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly Label _imagePathLabel = new() { ForeColor = Color.Gainsboro, AutoEllipsis = true, Dock = DockStyle.Fill };
-
     private string? _imagePath;
 
     public PosterEditorForm(PosterItem? source = null)
@@ -787,9 +686,9 @@ public sealed class PosterEditorForm : Form
         Width = 580;
         Height = 510;
         StartPosition = FormStartPosition.CenterParent;
-        Font = new Font("Segoe UI", 10f);
         BackColor = Color.FromArgb(14, 20, 32);
         ForeColor = Color.White;
+        Font = new Font("Segoe UI", 10f);
 
         var value = source is null ? new PosterItem() : new PosterItem
         {
@@ -814,15 +713,7 @@ public sealed class PosterEditorForm : Form
         _imagePath = value.ImagePath;
         _imagePathLabel.Text = string.IsNullOrWhiteSpace(_imagePath) ? "No image selected" : _imagePath;
 
-        var table = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 3,
-            RowCount = 8,
-            Padding = new Padding(14),
-            BackColor = Color.Transparent
-        };
-
+        var table = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, Padding = new Padding(14) };
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 115));
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
@@ -835,9 +726,10 @@ public sealed class PosterEditorForm : Form
         AddRow(table, 5, "Placement", _placementBox, null);
         AddRow(table, 6, "Image", _imagePathLabel, BuildImageButton());
 
-        var save = new Button { Text = "Save", Dock = DockStyle.Fill, Height = 42, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(36, 64, 105), ForeColor = Color.White };
+        var save = new Button { Text = "Save", Dock = DockStyle.Fill, Height = 42, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(35, 62, 103), ForeColor = Color.White };
         save.FlatAppearance.BorderSize = 0;
         save.Click += (_, _) => SaveAndClose();
+        table.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
         table.Controls.Add(save, 0, 7);
         table.SetColumnSpan(save, 3);
 
@@ -847,15 +739,10 @@ public sealed class PosterEditorForm : Form
     private Control BuildTargetButtons()
     {
         var wrap = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false };
-        var file = new Button { Text = "File", Width = 52, FlatStyle = FlatStyle.Flat };
-        var folder = new Button { Text = "Folder", Width = 58, FlatStyle = FlatStyle.Flat };
-
-        foreach (var b in new[] { file, folder })
-        {
-            b.FlatAppearance.BorderSize = 0;
-            b.BackColor = Color.FromArgb(26, 45, 79);
-            b.ForeColor = Color.White;
-        }
+        var file = new Button { Text = "File", Width = 52, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(26, 45, 79), ForeColor = Color.White };
+        var folder = new Button { Text = "Folder", Width = 58, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(26, 45, 79), ForeColor = Color.White };
+        file.FlatAppearance.BorderSize = 0;
+        folder.FlatAppearance.BorderSize = 0;
 
         file.Click += (_, _) =>
         {
@@ -875,9 +762,9 @@ public sealed class PosterEditorForm : Form
 
     private Control BuildImageButton()
     {
-        var button = new Button { Text = "Pick", Width = 86, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(26, 45, 79), ForeColor = Color.White };
-        button.FlatAppearance.BorderSize = 0;
-        button.Click += (_, _) =>
+        var b = new Button { Text = "Pick", Dock = DockStyle.Fill, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(26, 45, 79), ForeColor = Color.White };
+        b.FlatAppearance.BorderSize = 0;
+        b.Click += (_, _) =>
         {
             using var ofd = new OpenFileDialog { Filter = "Images|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp" };
             if (ofd.ShowDialog(this) == DialogResult.OK)
@@ -886,20 +773,13 @@ public sealed class PosterEditorForm : Form
                 _imagePathLabel.Text = _imagePath;
             }
         };
-        return button;
+        return b;
     }
 
-    private void AddRow(TableLayoutPanel table, int row, string label, Control field, Control? action)
+    private static void AddRow(TableLayoutPanel table, int row, string text, Control field, Control? action)
     {
         table.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
-        table.Controls.Add(new Label
-        {
-            Text = label,
-            Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleLeft,
-            ForeColor = Color.Gainsboro
-        }, 0, row);
-
+        table.Controls.Add(new Label { Text = text, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.Gainsboro }, 0, row);
         field.Dock = DockStyle.Fill;
         table.Controls.Add(field, 1, row);
         table.Controls.Add(action ?? new Panel(), 2, row);
@@ -907,15 +787,9 @@ public sealed class PosterEditorForm : Form
 
     private void SaveAndClose()
     {
-        if (string.IsNullOrWhiteSpace(_nameBox.Text))
+        if (string.IsNullOrWhiteSpace(_nameBox.Text) || string.IsNullOrWhiteSpace(_targetBox.Text))
         {
-            MessageBox.Show("Name is required.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(_targetBox.Text))
-        {
-            MessageBox.Show("Please pick a target file or folder.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show("Name and target are required.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
@@ -939,77 +813,67 @@ public sealed class ThemeEditorForm : Form
 {
     public ThemeConfig? Theme { get; private set; }
 
-    private readonly TextBox _name = new();
-    private readonly TextBox _accent = new();
-    private readonly TextBox _surface = new();
-    private readonly TextBox _background = new();
-
     public ThemeEditorForm(ThemeConfig current)
     {
         Text = "Theme Studio";
         Width = 540;
         Height = 380;
         StartPosition = FormStartPosition.CenterParent;
-        Font = new Font("Segoe UI", 10f);
         BackColor = Color.FromArgb(14, 20, 32);
         ForeColor = Color.White;
+        Font = new Font("Segoe UI", 10f);
 
-        _name.Text = current.Name;
-        _accent.Text = current.Accent;
-        _surface.Text = current.Surface;
-        _background.Text = current.Background;
+        var name = new TextBox { Text = current.Name, Dock = DockStyle.Fill };
+        var accent = new TextBox { Text = current.Accent, Dock = DockStyle.Fill };
+        var surface = new TextBox { Text = current.Surface, Dock = DockStyle.Fill };
+        var background = new TextBox { Text = current.Background, Dock = DockStyle.Fill };
 
         var table = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, Padding = new Padding(14) };
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 90));
 
-        AddColorRow(table, 0, "Theme", _name, null);
-        AddColorRow(table, 1, "Accent", _accent, () => PickColor(_accent));
-        AddColorRow(table, 2, "Surface", _surface, () => PickColor(_surface));
-        AddColorRow(table, 3, "Background", _background, () => PickColor(_background));
+        AddThemeRow(table, 0, "Theme", name, null);
+        AddThemeRow(table, 1, "Accent", accent, () => PickColor(accent));
+        AddThemeRow(table, 2, "Surface", surface, () => PickColor(surface));
+        AddThemeRow(table, 3, "Background", background, () => PickColor(background));
 
-        table.RowStyles.Add(new RowStyle(SizeType.Absolute, 55));
-        var save = new Button { Text = "Save Theme", Dock = DockStyle.Fill, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(36, 64, 105), ForeColor = Color.White };
+        var save = new Button { Text = "Save Theme", Dock = DockStyle.Fill, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(35, 62, 103), ForeColor = Color.White };
         save.FlatAppearance.BorderSize = 0;
         save.Click += (_, _) =>
         {
-            Theme = new ThemeConfig { Name = _name.Text.Trim(), Accent = _accent.Text.Trim(), Surface = _surface.Text.Trim(), Background = _background.Text.Trim(), BackgroundImage = current.BackgroundImage };
+            Theme = new ThemeConfig { Name = name.Text.Trim(), Accent = accent.Text.Trim(), Surface = surface.Text.Trim(), Background = background.Text.Trim(), BackgroundImage = current.BackgroundImage };
             DialogResult = DialogResult.OK;
             Close();
         };
+        table.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
         table.Controls.Add(save, 0, 4);
         table.SetColumnSpan(save, 3);
 
         Controls.Add(table);
     }
 
-    private void AddColorRow(TableLayoutPanel table, int row, string label, TextBox box, Action? picker)
+    private static void AddThemeRow(TableLayoutPanel table, int row, string label, TextBox box, Action? picker)
     {
         table.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
         table.Controls.Add(new Label { Text = label, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.Gainsboro }, 0, row);
-
-        box.Dock = DockStyle.Fill;
         table.Controls.Add(box, 1, row);
-
         if (picker is null)
         {
             table.Controls.Add(new Panel(), 2, row);
+            return;
         }
-        else
-        {
-            var button = new Button { Text = "Pick", Dock = DockStyle.Fill, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(26, 45, 79), ForeColor = Color.White };
-            button.FlatAppearance.BorderSize = 0;
-            button.Click += (_, _) => picker();
-            table.Controls.Add(button, 2, row);
-        }
+
+        var pick = new Button { Text = "Pick", Dock = DockStyle.Fill, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(26, 45, 79), ForeColor = Color.White };
+        pick.FlatAppearance.BorderSize = 0;
+        pick.Click += (_, _) => picker();
+        table.Controls.Add(pick, 2, row);
     }
 
-    private static void PickColor(TextBox target)
+    private static void PickColor(TextBox box)
     {
         using var dlg = new ColorDialog();
-        if (dlg.ShowDialog() == DialogResult.OK)
-            target.Text = $"#{dlg.Color.R:X2}{dlg.Color.G:X2}{dlg.Color.B:X2}";
+        if (dlg.ShowDialog() == DialogResult.OK) box.Text = $"#{dlg.Color.R:X2}{dlg.Color.G:X2}{dlg.Color.B:X2}";
     }
 }
 
@@ -1018,53 +882,28 @@ public sealed class InputDialog : Form
     public string Value => _box.Text;
     private readonly TextBox _box = new();
 
-    public InputDialog(string title, string label, string value)
+    public InputDialog(string title, string label, string initial)
     {
         Text = title;
         Width = 380;
-        Height = 170;
+        Height = 180;
         StartPosition = FormStartPosition.CenterParent;
 
-        var panel = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 3, Padding = new Padding(10) };
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        var panel = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(10), RowCount = 3 };
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
 
         panel.Controls.Add(new Label { Text = label, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 0);
-        _box.Text = value;
+        _box.Text = initial;
         _box.Dock = DockStyle.Fill;
         panel.Controls.Add(_box, 0, 1);
 
-        var ok = new Button { Text = "OK", Dock = DockStyle.Right, Width = 84 };
+        var ok = new Button { Text = "OK", Dock = DockStyle.Right, Width = 86 };
         ok.Click += (_, _) => { DialogResult = DialogResult.OK; Close(); };
         panel.Controls.Add(ok, 0, 2);
 
         Controls.Add(panel);
-    }
-}
-
-public sealed class SidebarListBox : ListBox
-{
-    public SidebarListBox()
-    {
-        BorderStyle = BorderStyle.None;
-        DrawMode = DrawMode.OwnerDrawFixed;
-        ItemHeight = 28;
-    }
-
-    protected override void OnDrawItem(DrawItemEventArgs e)
-    {
-        e.DrawBackground();
-        if (e.Index < 0 || e.Index >= Items.Count) return;
-
-        var isSel = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
-        using var b = new SolidBrush(isSel ? Color.FromArgb(40, 65, 108) : BackColor);
-        e.Graphics.FillRectangle(b, e.Bounds);
-
-        using var fore = new SolidBrush(ForeColor);
-        var textRect = new Rectangle(e.Bounds.X + 8, e.Bounds.Y, e.Bounds.Width - 12, e.Bounds.Height);
-        e.Graphics.DrawString(Items[e.Index].ToString(), Font, fore, textRect, new StringFormat { LineAlignment = StringAlignment.Center });
-        e.DrawFocusRectangle();
     }
 }
 
@@ -1076,14 +915,14 @@ public sealed class GradientPanel : Panel
 
     protected override void OnPaintBackground(PaintEventArgs e)
     {
-        using var brush = new LinearGradientBrush(ClientRectangle, ColorA, ColorB, Angle);
-        e.Graphics.FillRectangle(brush, ClientRectangle);
+        using var b = new LinearGradientBrush(ClientRectangle, ColorA, ColorB, Angle);
+        e.Graphics.FillRectangle(b, ClientRectangle);
     }
 }
 
 public sealed class RoundedPanel : Panel
 {
-    public int Radius { get; set; } = 10;
+    public int Radius { get; set; } = 12;
     public Color FillColor { get; set; } = Color.FromArgb(30, 40, 58);
 
     protected override void OnPaintBackground(PaintEventArgs e)
@@ -1096,7 +935,6 @@ public sealed class RoundedPanel : Panel
         path.AddArc(Width - r - 1, Height - r - 1, r, r, 0, 90);
         path.AddArc(0, Height - r - 1, r, r, 90, 90);
         path.CloseFigure();
-
         using var b = new SolidBrush(FillColor);
         e.Graphics.FillPath(b, path);
     }
